@@ -68,11 +68,15 @@ class QualityAssuranceAgent:
     def _improve_test_case(self, test_case: Dict, feedback: str) -> Dict:
         """根据反馈改进测试用例。"""
         try:
+            if not test_case or not feedback:
+                logger.warning("测试用例或反馈为空")
+                return test_case
+
             # 创建改进后的测试用例副本
             improved_case = test_case.copy()
             
             # 解析反馈内容
-            feedback_sections = feedback.split('\n')
+            feedback_sections = [line.strip() for line in feedback.split('\n') if line.strip()]
             current_section = None
             improvements = {
                 'completeness': [],
@@ -84,64 +88,74 @@ class QualityAssuranceAgent:
             
             # 提取各个方面的改进建议
             for line in feedback_sections:
-                line = line.strip()
-                if not line:
-                    continue
-                    
-                if '1. 完整性' in line:
-                    current_section = 'completeness'
-                elif '2. 清晰度' in line:
-                    current_section = 'clarity'
-                elif '3. 可执行性' in line:
-                    current_section = 'executability'
-                elif '4. 边界情况' in line:
-                    current_section = 'boundary_cases'
-                elif '5. 错误场景' in line:
-                    current_section = 'error_scenarios'
-                elif current_section and line.startswith('-'):
-                    improvements[current_section].append(line[1:].strip())
+                # 识别章节标题
+                section_mapping = {
+                    '1. 完整性': 'completeness',
+                    '2. 清晰度': 'clarity',
+                    '3. 可执行性': 'executability',
+                    '4. 边界情况': 'boundary_cases',
+                    '5. 错误场景': 'error_scenarios'
+                }
+                
+                for title, section in section_mapping.items():
+                    if title in line:
+                        current_section = section
+                        break
+                
+                # 提取建议内容
+                if current_section and (line.startswith('-') or line.startswith('•')):
+                    content = line[1:].strip()
+                    if content:  # 确保内容不为空
+                        improvements[current_section].append(content)
             
             # 根据反馈改进测试用例
             # 完整性改进
             if improvements['completeness']:
-                if 'preconditions' not in improved_case:
-                    improved_case['preconditions'] = []
-                if 'steps' not in improved_case:
-                    improved_case['steps'] = []
-                if 'expected_results' not in improved_case:
-                    improved_case['expected_results'] = []
+                required_fields = ['preconditions', 'steps', 'expected_results']
+                for field in required_fields:
+                    if field not in improved_case:
+                        improved_case[field] = []
+                    elif not isinstance(improved_case[field], list):
+                        improved_case[field] = [improved_case[field]]
             
             # 清晰度改进
             if improvements['clarity']:
                 # 确保标题清晰明确
-                if 'title' in improved_case and improved_case['title']:
-                    improved_case['title'] = improved_case['title'].strip()
+                if 'title' in improved_case:
+                    improved_case['title'] = improved_case['title'].strip() if improved_case['title'] else ''
                 # 确保步骤描述清晰
                 if 'steps' in improved_case:
-                    improved_case['steps'] = [step.strip() for step in improved_case['steps']]
+                    improved_case['steps'] = [step.strip() for step in improved_case['steps'] if step]
             
             # 可执行性改进
             if improvements['executability']:
-                # 确保每个步骤都有对应的预期结果
-                if len(improved_case.get('steps', [])) > len(improved_case.get('expected_results', [])):
-                    improved_case['expected_results'].extend(['待补充'] * 
-                        (len(improved_case['steps']) - len(improved_case['expected_results'])))
+                steps = improved_case.get('steps', [])
+                results = improved_case.get('expected_results', [])
+                if steps:
+                    # 确保每个步骤都有对应的预期结果
+                    if len(steps) > len(results):
+                        results.extend(['待补充'] * (len(steps) - len(results)))
+                    improved_case['expected_results'] = results
             
             # 边界情况改进
             if improvements['boundary_cases']:
-                # 添加边界条件测试步骤
-                improved_case.setdefault('boundary_conditions', [])
-                improved_case['boundary_conditions'].extend(improvements['boundary_cases'])
+                boundary_conditions = improved_case.setdefault('boundary_conditions', [])
+                # 去重并添加新的边界条件
+                new_conditions = [cond for cond in improvements['boundary_cases'] 
+                                if cond not in boundary_conditions]
+                boundary_conditions.extend(new_conditions)
             
             # 错误场景改进
             if improvements['error_scenarios']:
-                # 添加错误处理步骤
-                improved_case.setdefault('error_scenarios', [])
-                improved_case['error_scenarios'].extend(improvements['error_scenarios'])
+                error_scenarios = improved_case.setdefault('error_scenarios', [])
+                # 去重并添加新的错误场景
+                new_scenarios = [scenario for scenario in improvements['error_scenarios'] 
+                               if scenario not in error_scenarios]
+                error_scenarios.extend(new_scenarios)
             
             # 验证改进后的测试用例
             if not self._validate_improvements(test_case, improved_case):
-                logger.warning(f"测试用例改进可能导致数据丢失: {test_case['id']}")
+                logger.warning(f"测试用例改进可能导致数据丢失: {test_case.get('id', 'unknown')}")
                 return test_case
             
             return improved_case

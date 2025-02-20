@@ -1,4 +1,5 @@
 # src/agents/requirement_analyst.py
+import os
 import autogen
 from typing import Dict, List
 import logging
@@ -67,19 +68,33 @@ class RequirementAnalystAgent:
     def _extract_functional_reqs(self, message: str) -> List[str]:
         """从代理消息中提取功能需求。"""
         try:
+            if not message:
+                logger.warning("输入消息为空")
+                return []
+                
             # 将消息分割成段落并找到功能需求部分
             sections = message.split('\n')
             functional_reqs = []
             in_functional_section = False
             
             for line in sections:
-                if '1. 功能需求' in line:
+                line = line.strip()
+                if not line:
+                    continue
+                    
+                # 支持多种标题格式
+                if any(marker in line.lower() for marker in ['1. 功能需求', '功能需求:', '功能需求：']):
                     in_functional_section = True
                     continue
-                elif '2. 非功能需求' in line:
+                elif any(marker in line.lower() for marker in ['2. 非功能需求', '非功能需求:', '非功能需求：']):
                     break
-                elif in_functional_section and line.strip() and not line.startswith('1.'):
-                    functional_reqs.append(line.strip())
+                elif in_functional_section:
+                    # 过滤掉编号和空行
+                    content = line
+                    if line[0].isdigit() and '. ' in line:
+                        content = line.split('. ', 1)[1]
+                    if content and not content.startswith('1.'):
+                        functional_reqs.append(content)
             
             return functional_reqs
         except Exception as e:
@@ -89,18 +104,32 @@ class RequirementAnalystAgent:
     def _extract_non_functional_reqs(self, message: str) -> List[str]:
         """从代理消息中提取非功能需求。"""
         try:
+            if not message:
+                logger.warning("输入消息为空")
+                return []
+                
             sections = message.split('\n')
             non_functional_reqs = []
             in_non_functional_section = False
             
             for line in sections:
-                if '2. 非功能需求' in line:
+                line = line.strip()
+                if not line:
+                    continue
+                    
+                # 支持多种标题格式
+                if any(marker in line.lower() for marker in ['2. 非功能需求', '非功能需求:', '非功能需求：']):
                     in_non_functional_section = True
                     continue
-                elif '3. 测试场景' in line:
+                elif any(marker in line.lower() for marker in ['3. 测试场景', '测试场景:', '测试场景：']):
                     break
-                elif in_non_functional_section and line.strip() and not line.startswith('2.'):
-                    non_functional_reqs.append(line.strip())
+                elif in_non_functional_section:
+                    # 过滤掉编号和空行
+                    content = line
+                    if line[0].isdigit() and '. ' in line:
+                        content = line.split('. ', 1)[1]
+                    if content and not content.startswith('2.'):
+                        non_functional_reqs.append(content)
             
             return non_functional_reqs
         except Exception as e:
@@ -110,18 +139,32 @@ class RequirementAnalystAgent:
     def _extract_test_scenarios(self, message: str) -> List[str]:
         """从代理消息中提取测试场景。"""
         try:
+            if not message:
+                logger.warning("输入消息为空")
+                return []
+                
             sections = message.split('\n')
             test_scenarios = []
             in_scenarios_section = False
             
             for line in sections:
-                if '3. 测试场景' in line:
+                line = line.strip()
+                if not line:
+                    continue
+                    
+                # 支持多种标题格式
+                if any(marker in line.lower() for marker in ['3. 测试场景', '测试场景:', '测试场景：']):
                     in_scenarios_section = True
                     continue
-                elif '4. 风险领域' in line:
+                elif any(marker in line.lower() for marker in ['4. 风险领域', '风险领域:', '风险领域：']):
                     break
-                elif in_scenarios_section and line.strip() and not line.startswith('3.'):
-                    test_scenarios.append(line.strip())
+                elif in_scenarios_section:
+                    # 过滤掉编号和空行
+                    content = line
+                    if line[0].isdigit() and '. ' in line:
+                        content = line.split('. ', 1)[1]
+                    if content and not content.startswith('3.'):
+                        test_scenarios.append(content)
             
             return test_scenarios
         except Exception as e:
@@ -131,18 +174,32 @@ class RequirementAnalystAgent:
     def _extract_risk_areas(self, message: str) -> List[str]:
         """从代理消息中提取风险领域。"""
         try:
+            if not message:
+                logger.warning("输入消息为空")
+                return []
+                
             sections = message.split('\n')
             risk_areas = []
             in_risks_section = False
             
             for line in sections:
-                if '4. 风险领域' in line:
+                line = line.strip()
+                if not line:
+                    continue
+                    
+                # 支持多种标题格式
+                if any(marker in line.lower() for marker in ['4. 风险领域', '风险领域:', '风险领域：']):
                     in_risks_section = True
                     continue
                 elif line.startswith('5.') or not line.strip():
                     break
-                elif in_risks_section and line.strip() and not line.startswith('4.'):
-                    risk_areas.append(line.strip())
+                elif in_risks_section:
+                    # 过滤掉编号和空行
+                    content = line
+                    if line[0].isdigit() and '. ' in line:
+                        content = line.split('. ', 1)[1]
+                    if content and not content.startswith('4.'):
+                        risk_areas.append(content)
             
             return risk_areas
         except Exception as e:

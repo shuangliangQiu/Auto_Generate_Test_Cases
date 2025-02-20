@@ -1,7 +1,6 @@
 # src/main.py
 import asyncio
 import logging
-from pathlib import Path
 from typing import Dict, Optional
 
 from agents.assistant import AssistantAgent
