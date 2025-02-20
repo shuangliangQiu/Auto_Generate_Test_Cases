@@ -1,4 +1,4 @@
-# Auto_Generate_Test_Cases
+# Auto Generate Test Cases
 
 A Python-based AI testing system that leverages AutoGen framework and multiple AI agents to automatically analyze requirements and generate test cases.
 
