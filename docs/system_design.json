@@ -1,0 +1,313 @@
+{
+  "system_design": {
+    "version": "1.0",
+    "last_updated": "2024-02-19",
+    "system_architecture": {
+      "frontend": {
+        "framework": "React + Tailwind CSS",
+        "components": [
+          {
+            "name": "项目管理模块",
+            "features": ["项目创建", "项目列表", "项目详情"]
+          },
+          {
+            "name": "文档处理模块",
+            "features": ["文档上传", "文档预览", "分析状态展示"]
+          },
+          {
+            "name": "测试用例管理模块",
+            "features": ["用例列表", "用例编辑", "用例导出"]
+          },
+          {
+            "name": "配置中心模块",
+            "features": ["模板管理", "字段配置", "导出设置"]
+          }
+        ]
+      },
+      "backend": {
+        "framework": "FastAPI",
+        "components": [
+          {
+            "name": "文档处理服务",
+            "technologies": ["python-docx", "PyPDF2", "LangChain"]
+          },
+          {
+            "name": "智能体系统",
+            "technologies": ["AutoGen", "OpenAI API"]
+          },
+          {
+            "name": "数据存储",
+            "technologies": ["MongoDB", "Redis"]
+          },
+          {
+            "name": "导出服务",
+            "technologies": ["openpyxl", "pandas"]
+          }
+        ]
+      }
+    },
+    "autogen_agents": {
+      "agents": [
+        {
+          "name": "RequirementAnalyst",
+          "role": "需求分析师",
+          "responsibilities": [
+            "解析需求文档",
+            "提取功能点",
+            "识别测试重点",
+            "生成结构化需求"
+          ],
+          "skills": ["文档理解", "信息提取", "需求分析"]
+        },
+        {
+          "name": "TestDesigner",
+          "role": "测试设计师",
+          "responsibilities": [
+            "设计测试策略",
+            "创建测试场景",
+            "确定测试优先级"
+          ],
+          "skills": ["测试设计", "场景分析", "风险评估"]
+        },
+        {
+          "name": "TestCaseWriter",
+          "role": "测试用例编写员",
+          "responsibilities": [
+            "编写测试步骤",
+            "设定预期结果",
+            "生成完整用例"
+          ],
+          "skills": ["用例编写", "细节把控", "逻辑思维"]
+        },
+        {
+          "name": "QualityAssurance",
+          "role": "质量保证员",
+          "responsibilities": [
+            "审核测试用例",
+            "评估覆盖率",
+            "提供优化建议"
+          ],
+          "skills": ["质量控制", "测试评估", "优化分析"]
+        },
+        {
+          "name": "Assistant",
+          "role": "协调助手",
+          "responsibilities": [
+            "任务分配",
+            "流程管理",
+            "异常处理"
+          ],
+          "skills": ["任务协调", "流程控制", "问题处理"]
+        }
+      ],
+      "communication_patterns": {
+        "type": "chain",
+        "flow": "RequirementAnalyst -> TestDesigner -> TestCaseWriter -> QualityAssurance",
+        "coordinator": "Assistant"
+      }
+    },
+    "workflow": {
+      "phases": [
+        {
+          "name": "需求接收",
+          "steps": [
+            "创建项目",
+            "上传需求文档",
+            "初始化配置"
+          ]
+        },
+        {
+          "name": "需求分析",
+          "steps": [
+            "文档解析",
+            "关键信息提取",
+            "需求结构化"
+          ]
+        },
+        {
+          "name": "测试设计",
+          "steps": [
+            "场景设计",
+            "策略制定",
+            "优先级划分"
+          ]
+        },
+        {
+          "name": "用例生成",
+          "steps": [
+            "用例编写",
+            "数据填充",
+            "格式化处理"
+          ]
+        },
+        {
+          "name": "质量审核",
+          "steps": [
+            "用例审核",
+            "覆盖率检查",
+            "反馈优化"
+          ]
+        },
+        {
+          "name": "结果导出",
+          "steps": [
+            "Excel生成",
+            "格式优化",
+            "文件导出"
+          ]
+        }
+      ]
+    },
+    "data_flow": {
+      "components": [
+        {
+          "name": "文档处理器",
+          "input": ["原始文档"],
+          "output": ["结构化文档", "关键信息"],
+          "storage": "MongoDB.documents"
+        },
+        {
+          "name": "需求分析器",
+          "input": ["结构化文档"],
+          "output": ["需求分析结果", "测试重点"],
+          "storage": "MongoDB.requirements"
+        },
+        {
+          "name": "测试设计器",
+          "input": ["需求分析结果"],
+          "output": ["测试场景", "测试策略"],
+          "storage": "MongoDB.test_designs"
+        },
+        {
+          "name": "用例生成器",
+          "input": ["测试场景", "模板配置"],
+          "output": ["测试用例"],
+          "storage": "MongoDB.test_cases"
+        },
+        {
+          "name": "质量控制器",
+          "input": ["测试用例"],
+          "output": ["审核结果", "优化建议"],
+          "storage": "MongoDB.quality_reviews"
+        },
+        {
+          "name": "导出管理器",
+          "input": ["测试用例", "导出配置"],
+          "output": ["Excel文件"],
+          "storage": "FileSystem"
+        }
+      ],
+      "data_store": {
+        "primary": "MongoDB",
+        "cache": "Redis",
+        "file_storage": "本地文件系统"
+      }
+    },
+    "api_interfaces": {
+      "project_management": {
+        "create_project": {
+          "method": "POST",
+          "path": "/api/projects",
+          "params": {
+            "name": "string",
+            "description": "string"
+          }
+        },
+        "get_projects": {
+          "method": "GET",
+          "path": "/api/projects",
+          "params": {
+            "page": "integer",
+            "size": "integer"
+          }
+        },
+        "get_project": {
+          "method": "GET",
+          "path": "/api/projects/{id}"
+        },
+        "update_project": {
+          "method": "PUT",
+          "path": "/api/projects/{id}"
+        },
+        "delete_project": {
+          "method": "DELETE",
+          "path": "/api/projects/{id}"
+        }
+      },
+      "document_management": {
+        "upload_document": {
+          "method": "POST",
+          "path": "/api/documents/upload",
+          "content_type": "multipart/form-data"
+        },
+        "analyze_document": {
+          "method": "POST",
+          "path": "/api/documents/analyze/{id}"
+        },
+        "get_analysis_result": {
+          "method": "GET",
+          "path": "/api/documents/analysis/{id}"
+        }
+      },
+      "test_case_management": {
+        "generate_test_cases": {
+          "method": "POST",
+          "path": "/api/testcases/generate",
+          "params": {
+            "project_id": "string",
+            "template_id": "string"
+          }
+        },
+        "get_test_cases": {
+          "method": "GET",
+          "path": "/api/testcases",
+          "params": {
+            "project_id": "string",
+            "page": "integer",
+            "size": "integer"
+          }
+        },
+        "update_test_case": {
+          "method": "PUT",
+          "path": "/api/testcases/{id}"
+        },
+        "delete_test_case": {
+          "method": "DELETE",
+          "path": "/api/testcases/{id}"
+        }
+      },
+      "template_management": {
+        "create_template": {
+          "method": "POST",
+          "path": "/api/templates"
+        },
+        "get_templates": {
+          "method": "GET",
+          "path": "/api/templates"
+        },
+        "update_template": {
+          "method": "PUT",
+          "path": "/api/templates/{id}"
+        },
+        "delete_template": {
+          "method": "DELETE",
+          "path": "/api/templates/{id}"
+        }
+      },
+      "export_management": {
+        "export_to_excel": {
+          "method": "POST",
+          "path": "/api/export/excel",
+          "params": {
+            "project_id": "string",
+            "template_id": "string"
+          }
+        },
+        "get_export_status": {
+          "method": "GET",
+          "path": "/api/export/status/{id}"
+        }
+      }
+    }
+  }
+}

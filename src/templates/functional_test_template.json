@@ -1,0 +1,51 @@
+{
+    "name": "功能测试模板",
+    "description": "用于系统功能测试的标准模板",
+    "version": "1.0",
+    "custom_fields": [
+        "测试环境",
+        "前置数据",
+        "测试数据",
+        "清理步骤",
+        "相关需求ID",
+        "自动化脚本"
+    ],
+    "column_widths": {
+        "ID": 10,
+        "Title": 60,
+        "Description": 120,
+        "测试环境": 30,
+        "前置数据": 80,
+        "测试数据": 80,
+        "Preconditions": 100,
+        "Steps": 150,
+        "Expected Results": 150,
+        "清理步骤": 80,
+        "Priority": 15,
+        "Category": 20,
+        "相关需求ID": 30,
+        "自动化脚本": 50
+    },
+    "conditional_formatting": [
+        {
+            "column": "Category",
+            "condition": "Regression",
+            "format": "blue"
+        },
+        {
+            "column": "Priority",
+            "condition": "High",
+            "format": "bold_red"
+        },
+        {
+            "column": "自动化脚本",
+            "condition": "^$",
+            "format": "gray"
+        },
+        {
+            "column": "测试环境",
+            "condition": "生产",
+            "format": "bold_red"
+        }
+    ]
+}
