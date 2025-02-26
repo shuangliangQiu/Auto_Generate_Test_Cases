@@ -7,9 +7,11 @@ from dotenv import load_dotenv
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-api_key = os.getenv("OPENAI_API_KEY")
-base_url = os.getenv("OPENAI_API_BASE")
-model = os.getenv("OPENAI_MODEL")
+# 使用 Azure OpenAI 配置
+api_key = os.getenv("AZURE_OPENAI_API_KEY")
+base_url = os.getenv("AZURE_OPENAI_BASE_URL")
+model = os.getenv("AZURE_OPENAI_MODEL")
+model_version = os.getenv("AZURE_OPENAI_MODEL_VERSION")
 
 class QualityAssuranceAgent:
     def __init__(self):
@@ -17,7 +19,9 @@ class QualityAssuranceAgent:
             {
                 "model": model,
                 "api_key": api_key,
-                "base_url":base_url 
+                "base_url": base_url,
+                "api_type": "azure",
+                "api_version": model_version
             }
         ]
         
@@ -27,17 +31,22 @@ class QualityAssuranceAgent:
             测试用例，确保它们符合质量标准。""",
             llm_config={"config_list": self.config_list}
         )
+        
+        # 添加last_review属性，用于跟踪最近的审查结果
+        self.last_review = None
 
-    async def review(self, test_cases: List[Dict]) -> List[Dict]:
+    def review(self, test_cases: List[Dict]) -> List[Dict]:
         """审查和改进测试用例。"""
         try:
             user_proxy = autogen.UserProxyAgent(
                 name="user_proxy",
-                system_message="测试用例提供者"
+                system_message="测试用例提供者",
+                human_input_mode="NEVER",
+                code_execution_config={"use_docker": False}
             )
 
             # 审查测试用例
-            await user_proxy.initiate_chat(
+            user_proxy.initiate_chat(
                 self.agent,
                 message=f"""请审查以下测试用例并提供改进建议：
                 
@@ -48,10 +57,21 @@ class QualityAssuranceAgent:
                 2. 清晰度
                 3. 可执行性
                 4. 边界情况
-                5. 错误场景"""
+                5. 错误场景""",
+                max_turns=1  # 限制对话轮次为1，避免死循环
             )
 
             reviewed_cases = self._process_review(test_cases, self.agent.last_message())
+            
+            # 如果审查结果为空，返回原始测试用例
+            if not reviewed_cases:
+                logger.warning("测试用例审查结果为空，返回原始测试用例")
+                return test_cases
+            
+            # 保存审查结果到last_review属性
+            self.last_review = reviewed_cases
+            logger.info(f"测试用例审查完成，共审查 {len(reviewed_cases)} 个测试用例")
+            
             return reviewed_cases
 
         except Exception as e:

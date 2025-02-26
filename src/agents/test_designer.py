@@ -7,9 +7,11 @@ from dotenv import load_dotenv
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-api_key = os.getenv("OPENAI_API_KEY")
-base_url = os.getenv("OPENAI_API_BASE")
-model = os.getenv("OPENAI_MODEL")
+# 使用 Azure OpenAI 配置
+api_key = os.getenv("AZURE_OPENAI_API_KEY")
+base_url = os.getenv("AZURE_OPENAI_BASE_URL")
+model = os.getenv("AZURE_OPENAI_MODEL")
+model_version = os.getenv("AZURE_OPENAI_MODEL_VERSION")
 
 class TestDesignerAgent:
     def __init__(self):
@@ -17,45 +19,154 @@ class TestDesignerAgent:
             {
                 "model": model,
                 "api_key": api_key,
-                "base_url":base_url 
+                "base_url": base_url,
+                "api_type": "azure",
+                "api_version": model_version
             }
         ]
         
         self.agent = autogen.AssistantAgent(
             name="test_designer",
-            system_message="""你是一位专业的测试设计师。你的职责是基于分析后的需求
-            创建全面的测试策略和测试场景。""",
+            system_message="""你是一位专业的测试设计师，擅长将需求转化为全面的测试策略。
+
+你的主要职责包括：
+1. 分析需求文档和需求分析结果
+2. 设计全面的测试方法，包括但不限于：
+   - 功能测试
+   - 性能测试
+   - 安全测试
+   - 兼容性测试
+   - 可用性测试
+3. 创建详细的测试覆盖矩阵，确保所有功能点都被覆盖
+4. 制定合理的测试优先级策略
+5. 评估所需的测试资源
+
+在提供测试策略时，你应该：
+- 确保测试方法与需求紧密对应
+- 提供具体的测试工具和框架建议
+- 考虑测试执行的可行性
+- 平衡测试覆盖率和资源限制
+
+请以结构化的方式提供你的分析结果，包含具体的测试方法、覆盖矩阵、优先级和资源估算。""",
             llm_config={"config_list": self.config_list}
         )
+        
+        # 添加last_design属性，用于跟踪最近的设计结果
+        self.last_design = None
 
-    async def design(self, requirements: Dict) -> Dict:
-        """基于分析后的需求设计测试策略。"""
+    def design(self, requirements: Dict) -> Dict:
+        """基于分析后的需求设计测试策略。
+        
+        Args:
+            requirements: 包含原始需求文档和需求分析结果的字典
+                - original_doc: 原始需求文档
+                - analysis_result: 需求分析结果
+        """
         try:
             user_proxy = autogen.UserProxyAgent(
                 name="user_proxy",
-                system_message="需求提供者"
+                system_message="需求提供者",
+                human_input_mode="NEVER",
+                code_execution_config={"use_docker": False}
             )
 
             # 创建测试策略
-            await user_proxy.initiate_chat(
+            user_proxy.initiate_chat(
                 self.agent,
                 message=f"""基于以下需求创建详细的测试策略：
                 
-                需求: {requirements}
+                原始需求文档：
+                {requirements.get('original_doc', '')}
                 
-                请提供：
+                需求分析结果：
+                功能需求：{requirements.get('analysis_result', {}).get('functional_requirements', [])}
+                非功能需求：{requirements.get('analysis_result', {}).get('non_functional_requirements', [])}
+                测试场景：{requirements.get('analysis_result', {}).get('test_scenarios', [])}
+                风险领域：{requirements.get('analysis_result', {}).get('risk_areas', [])}
+                
+                请按照以下格式提供测试策略：
+                
                 1. 测试方法
+                   - 功能测试方法和工具
+                   - 性能测试方法和工具
+                   - 安全测试方法和工具
+                   - 兼容性测试方法和工具
+                   - 可用性测试方法和工具
+                   - 建议使用的测试框架
+                
                 2. 测试覆盖矩阵
+                   - 每个功能需求的测试类型
+                   - 每个非功能需求的测试类型
+                   - 每个测试场景的覆盖方案
+                   - 风险领域的测试覆盖
+                
                 3. 测试优先级
-                4. 资源估算"""
+                   P0：关键功能和高风险项
+                   P1：核心业务功能
+                   P2：重要但非核心功能
+                   P3：次要功能
+                   P4：低优先级功能
+                
+                4. 资源估算
+                   - 预计所需时间
+                   - 所需人员配置
+                   - 测试工具清单
+                   - 其他资源需求
+                
+                请直接提供分析结果，确保每个部分都有具体的内容和建议。""",
+                max_turns=1  # 限制对话轮次为1，避免死循环
             )
 
+            # 处理代理的响应
+            response = self.agent.last_message()
+            if not response:
+                logger.warning("测试设计代理返回空响应")
+                return {
+                    "test_approach": {
+                        "methodology": [],
+                        "tools": [],
+                        "frameworks": []
+                    },
+                    "coverage_matrix": [],
+                    "priorities": [],
+                    "resource_estimation": {
+                        "time": None,
+                        "personnel": None,
+                        "tools": [],
+                        "additional_resources": []
+                    }
+                }
+
+            # 确保响应是字符串类型
+            response_str = str(response) if response else ""
+            if not response_str.strip():
+                logger.warning("测试设计代理返回空响应")
+                return {
+                    "test_approach": {
+                        "methodology": [],
+                        "tools": [],
+                        "frameworks": []
+                    },
+                    "coverage_matrix": [],
+                    "priorities": [],
+                    "resource_estimation": {
+                        "time": None,
+                        "personnel": None,
+                        "tools": [],
+                        "additional_resources": []
+                    }
+                }
+
             test_strategy = {
-                "test_approach": self._extract_test_approach(self.agent.last_message()),
-                "coverage_matrix": self._create_coverage_matrix(self.agent.last_message()),
-                "priorities": self._extract_priorities(self.agent.last_message()),
-                "resource_estimation": self._extract_resource_estimation(self.agent.last_message())
+                "test_approach": self._extract_test_approach(response_str),
+                "coverage_matrix": self._create_coverage_matrix(response_str),
+                "priorities": self._extract_priorities(response_str),
+                "resource_estimation": self._extract_resource_estimation(response_str)
             }
+            
+            # 保存设计结果到last_design属性
+            self.last_design = test_strategy
+            logger.info("测试设计完成")
 
             return test_strategy
 
@@ -78,6 +189,7 @@ class TestDesignerAgent:
                 
             sections = message.split('\n')
             in_approach_section = False
+            current_section = None
             
             for line in sections:
                 try:
@@ -93,17 +205,27 @@ class TestDesignerAgent:
                     elif in_approach_section and not line.startswith('1.'):
                         # 分类方法详情
                         try:
-                            if '方法:' in line.lower() or '方法：' in line:
-                                content = line.split(':', 1)[1].strip() if ':' in line else line.split('：', 1)[1].strip()
-                                test_approach['methodology'].append(content)
-                            elif '工具:' in line.lower() or '工具：' in line:
-                                content = line.split(':', 1)[1].strip() if ':' in line else line.split('：', 1)[1].strip()
-                                test_approach['tools'].append(content)
-                            elif '框架:' in line.lower() or '框架：' in line:
-                                content = line.split(':', 1)[1].strip() if ':' in line else line.split('：', 1)[1].strip()
-                                test_approach['frameworks'].append(content)
-                            else:
-                                # 默认归类为方法
+                            # 检查是否是新的方法类型标题
+                            if '功能测试' in line or '性能测试' in line or '安全测试' in line or '兼容性测试' in line or '可用性测试' in line:
+                                current_section = line.strip()
+                                test_approach['methodology'].append(current_section)
+                            elif line.startswith('-') or line.startswith('*'):
+                                # 提取具体的测试方法
+                                content = line.strip('- *').strip()
+                                if content:
+                                    test_approach['methodology'].append(content)
+                            elif '工具' in line.lower():
+                                # 提取工具信息
+                                if ':' in line or '：' in line:
+                                    content = line.split(':', 1)[1].strip() if ':' in line else line.split('：', 1)[1].strip()
+                                    test_approach['tools'].extend([t.strip() for t in content.split(',')])
+                            elif '框架' in line.lower():
+                                # 提取框架信息
+                                if ':' in line or '：' in line:
+                                    content = line.split(':', 1)[1].strip() if ':' in line else line.split('：', 1)[1].strip()
+                                    test_approach['frameworks'].extend([f.strip() for f in content.split(',')])
+                            elif current_section and line.strip():
+                                # 将其他内容添加到当前部分
                                 test_approach['methodology'].append(line.strip())
                         except IndexError as e:
                             logger.error(f"解析方法详情时出错: {str(e)}，行内容: {line}")
@@ -111,6 +233,11 @@ class TestDesignerAgent:
                 except Exception as e:
                     logger.error(f"处理单行内容时出错: {str(e)}，行内容: {line}")
                     continue
+            
+            # 去重并过滤空值
+            test_approach['methodology'] = list(filter(None, set(test_approach['methodology'])))
+            test_approach['tools'] = list(filter(None, set(test_approach['tools'])))
+            test_approach['frameworks'] = list(filter(None, set(test_approach['frameworks'])))
             
             return test_approach
         except Exception as e:
@@ -144,7 +271,23 @@ class TestDesignerAgent:
                     elif in_matrix_section and not line.startswith('2.'):
                         try:
                             # 识别功能及其测试覆盖
-                            if line.strip().endswith(':') or line.strip().endswith('：'):
+                            if '|' in line:  # 处理表格格式
+                                cells = [cell.strip() for cell in line.split('|')]
+                                cells = [cell for cell in cells if cell]  # 移除空单元格
+                                
+                                if len(cells) >= 2:
+                                    # 跳过表头和分隔行
+                                    if not any(header in cells[0].lower() for header in ['需求类型', '用例编号', '-']):
+                                        feature = cells[2] if len(cells) > 2 else cells[0]  # 使用描述列或第一列
+                                        test_cases = cells[-1] if len(cells) > 3 else ''  # 使用最后一列作为测试用例
+                                        
+                                        if feature and test_cases:
+                                            for test_case in test_cases.split(','):
+                                                coverage_matrix.append({
+                                                    'feature': feature.strip(),
+                                                    'test_type': test_case.strip()
+                                                })
+                            elif line.strip().endswith(':') or line.strip().endswith('：'):
                                 current_feature = line.strip().rstrip(':').rstrip('：').strip()
                             elif current_feature and any(line.strip().startswith(marker) for marker in ['-', '•', '*', '>', '+']):
                                 test_type = line.strip()[1:].strip()
@@ -167,7 +310,16 @@ class TestDesignerAgent:
                     logger.error(f"处理单行内容时出错: {str(e)}，行内容: {line}")
                     continue
             
-            return coverage_matrix
+            # 去重并过滤空值
+            unique_matrix = []
+            seen = set()
+            for item in coverage_matrix:
+                key = (item['feature'], item['test_type'])
+                if key not in seen and item['feature'] and item['test_type']:
+                    seen.add(key)
+                    unique_matrix.append(item)
+            
+            return unique_matrix
         except Exception as e:
             logger.error(f"创建测试覆盖矩阵错误: {str(e)}")
             return coverage_matrix
@@ -251,13 +403,13 @@ class TestDesignerAgent:
                     elif in_estimation_section and not line.startswith('4.'):
                         try:
                             # 解析资源详情
-                            if any(marker in line.lower() for marker in ['时间:', '时间：']):
+                            if '时间:' in line.lower() or '时间：' in line:
                                 resource_estimation['time'] = line.split(':', 1)[1].strip() if ':' in line else line.split('：', 1)[1].strip()
-                            elif any(marker in line.lower() for marker in ['人员:', '人员：']):
+                            elif '人员:' in line.lower() or '人员：' in line:
                                 resource_estimation['personnel'] = line.split(':', 1)[1].strip() if ':' in line else line.split('：', 1)[1].strip()
-                            elif any(marker in line.lower() for marker in ['工具:', '工具：']):
+                            elif '工具:' in line.lower() or '工具：' in line:
                                 tools = line.split(':', 1)[1].strip() if ':' in line else line.split('：', 1)[1].strip()
-                                resource_estimation['tools'].extend([t.strip() for t in tools.split(',') if t.strip()])
+                                resource_estimation['tools'].append(tools)
                             else:
                                 resource_estimation['additional_resources'].append(line.strip())
                         except IndexError as e:

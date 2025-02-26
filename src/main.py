@@ -38,8 +38,8 @@ class AITestingSystem:
              self.test_case_writer, self.quality_assurance]
         )
 
-    async def process_requirements(self, 
-                                 doc_path: str, 
+    async def process_requirements(self,
+                                 doc_path: str,
                                  template_path: str,
                                  output_path: Optional[str] = None) -> Dict:
         """Process requirements and generate test cases."""
@@ -47,20 +47,52 @@ class AITestingSystem:
             # Process document
             doc_content = await self.doc_processor.process_document(doc_path)
             
-            # Analyze requirements
-            requirements = await self.requirement_analyst.analyze(doc_content)
+            # 使用assistant协调工作流程，而不是直接调用各个代理
+            task = {
+                'name': '测试用例生成',
+                'description': doc_content
+            }
             
-            # Design test strategy
-            test_strategy = await self.test_designer.design(requirements)
+            logger.info("开始协调工作流程")
+            try:
+                result = await self.assistant.coordinate_workflow(task)
+                logger.info(f"工作流程协调结果: {result}")
+            except Exception as e:
+                logger.error(f"工作流程协调错误: {str(e)}")
+                return {'status': 'error', 'message': f'工作流程协调错误: {str(e)}'}
             
-            # Generate test cases
-            test_cases = await self.test_case_writer.generate(test_strategy)
+            # 如果需要修改，返回错误信息
+            if result.get('status') == 'needs_revision':
+                logger.error(f"需求分析结果需要调整: {result.get('message')}")
+                return {'status': 'error', 'message': '需求分析结果需要调整'}
             
-            # Review test cases
-            reviewed_cases = await self.quality_assurance.review(test_cases)
+            # 从协调结果中获取各个阶段的结果
+            requirements = None
+            test_strategy = None
+            test_cases = None
+            reviewed_cases = None
+            
+            for agent in self.assistant.agents:
+                if isinstance(agent, RequirementAnalystAgent) and hasattr(agent, 'last_analysis'):
+                    requirements = agent.last_analysis
+                elif isinstance(agent, TestDesignerAgent) and hasattr(agent, 'last_design'):
+                    test_strategy = agent.last_design
+                elif isinstance(agent, TestCaseWriterAgent) and hasattr(agent, 'last_cases'):
+                    test_cases = agent.last_cases
+                elif isinstance(agent, QualityAssuranceAgent) and hasattr(agent, 'last_review'):
+                    reviewed_cases = agent.last_review
+            
+            # 如果没有获取到审查后的测试用例，使用测试用例
+            if not reviewed_cases and test_cases:
+                reviewed_cases = test_cases
+                
+            # 如果没有获取到任何测试用例，返回错误
+            if not reviewed_cases:
+                logger.error("没有生成任何测试用例")
+                return {'status': 'error', 'message': '没有生成任何测试用例'}
             
             # Export test cases
-            if output_path:
+            if output_path and reviewed_cases:
                 # 如果template_path是路径，则从文件加载模板
                 if isinstance(template_path, str):
                     try:
@@ -83,11 +115,14 @@ class AITestingSystem:
                     template,
                     output_path
                 )
+                logger.info(f"测试用例已导出到 {output_path}")
             
             return {
+                "status": "success",
                 "requirements": requirements,
                 "test_strategy": test_strategy,
-                "test_cases": reviewed_cases
+                "test_cases": reviewed_cases,
+                "workflow_result": result
             }
             
         except Exception as e:
@@ -97,12 +132,19 @@ class AITestingSystem:
 async def main():
     # Example usage
     system = AITestingSystem()
-    doc_path = "requirements.pdf"
-    template_path = "default_template"
+    doc_path = "/Users/liutao/Downloads/Auto_Generate_Test_Cases/docs/简本溯源-资质证照一键整理.pdf"
+    template_path = "/Users/liutao/Downloads/Auto_Generate_Test_Cases/src/templates/functional_test_template.json"
     output_path = "test_cases.xlsx"
     
     result = await system.process_requirements(doc_path, template_path, output_path)
-    print("Test case generation completed successfully!")
+    
+    if result.get('status') == 'success':
+        print("测试用例生成成功！")
+        print(f"共生成 {len(result.get('test_cases', []))} 个测试用例")
+        if 'workflow_result' in result:
+            print(f"工作流程状态: {result['workflow_result'].get('status', 'unknown')}")
+    else:
+        print(f"测试用例生成失败: {result.get('message', '未知错误')}")
 
 if __name__ == "__main__":
     asyncio.run(main())

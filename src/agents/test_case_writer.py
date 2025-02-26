@@ -7,9 +7,11 @@ from dotenv import load_dotenv
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-api_key = os.getenv("OPENAI_API_KEY")
-base_url = os.getenv("OPENAI_API_BASE")
-model = os.getenv("OPENAI_MODEL")
+# 使用 Azure OpenAI 配置
+api_key = os.getenv("AZURE_OPENAI_API_KEY")
+base_url = os.getenv("AZURE_OPENAI_BASE_URL")
+model = os.getenv("AZURE_OPENAI_MODEL")
+model_version = os.getenv("AZURE_OPENAI_MODEL_VERSION")
 
 class TestCaseWriterAgent:
     def __init__(self):
@@ -17,7 +19,9 @@ class TestCaseWriterAgent:
             {
                 "model": model,
                 "api_key": api_key,
-                "base_url":base_url 
+                "base_url": base_url,
+                "api_type": "azure",
+                "api_version": model_version
             }
         ]
         
@@ -27,17 +31,22 @@ class TestCaseWriterAgent:
             策略创建详细、清晰且可执行的测试用例。""",
             llm_config={"config_list": self.config_list}
         )
+        
+        # 添加last_cases属性，用于跟踪最近生成的测试用例
+        self.last_cases = None
 
-    async def generate(self, test_strategy: Dict) -> List[Dict]:
+    def generate(self, test_strategy: Dict) -> List[Dict]:
         """基于测试策略生成测试用例。"""
         try:
             user_proxy = autogen.UserProxyAgent(
                 name="user_proxy",
-                system_message="测试策略提供者"
+                system_message="测试策略提供者",
+                human_input_mode="NEVER",
+                code_execution_config={"use_docker": False}
             )
 
             # 生成测试用例
-            await user_proxy.initiate_chat(
+            user_proxy.initiate_chat(
                 self.agent,
                 message=f"""基于以下测试策略创建详细的测试用例：
                 
@@ -50,10 +59,23 @@ class TestCaseWriterAgent:
                 4. 测试步骤
                 5. 预期结果
                 6. 优先级
-                7. 类别"""
+                7. 类别
+                
+                请直接提供测试用例，无需等待进一步确认。""",
+                max_turns=1  # 限制对话轮次为1，避免死循环
             )
 
             test_cases = self._parse_test_cases(self.agent.last_message())
+            
+            # 如果解析结果为空，返回空列表
+            if not test_cases:
+                logger.warning("测试用例生成为空")
+                return []
+            
+            # 保存测试用例到last_cases属性
+            self.last_cases = test_cases
+            logger.info(f"测试用例生成完成，共生成 {len(test_cases)} 个测试用例")
+            
             return test_cases
 
         except Exception as e:
