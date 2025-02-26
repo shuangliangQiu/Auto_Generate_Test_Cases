@@ -1,4 +1,5 @@
 # src/agents/requirement_analyst.py
+import os
 import autogen
 from typing import Dict, List
 import logging

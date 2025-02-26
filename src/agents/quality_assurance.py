@@ -1,4 +1,5 @@
 # src/agents/quality_assurance.py
+import os
 import autogen
 from typing import Dict, List
 import logging

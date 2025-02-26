@@ -3,6 +3,8 @@ import asyncio
 import logging
 from pathlib import Path
 from typing import Dict, Optional
+from models.template import Template
+import json
 
 from agents.assistant import AssistantAgent
 from agents.requirement_analyst import RequirementAnalystAgent
@@ -39,7 +41,7 @@ class AITestingSystem:
 
     async def process_requirements(self, 
                                  doc_path: str, 
-                                 template_id: str,
+                                 template_path: str,
                                  output_path: Optional[str] = None) -> Dict:
         """Process requirements and generate test cases."""
         try:
@@ -60,9 +62,26 @@ class AITestingSystem:
             
             # Export test cases
             if output_path:
+                # 如果template_path是路径，则从文件加载模板
+                if isinstance(template_path, str):
+                    try:
+                        with open(template_path, 'r') as f:
+                            template_data = json.load(f)
+                        template = Template.from_dict(template_data)
+                    except Exception as e:
+                        logger.error(f"Error loading template: {str(e)}")
+                        # 使用默认模板
+                        template = Template(
+                            name="Default Template",
+                            description="Default test case template"
+                        )
+                else:
+                    # 假设template_path已经是Template对象
+                    template = template_path
+                
                 await self.export_service.export_to_excel(
-                    reviewed_cases, 
-                    template_id,
+                    reviewed_cases,
+                    template,
                     output_path
                 )
             
@@ -80,10 +99,10 @@ async def main():
     # Example usage
     system = AITestingSystem()
     doc_path = "requirements.pdf"
-    template_id = "default_template"
+    template_path = "default_template"
     output_path = "test_cases.xlsx"
     
-    result = await system.process_requirements(doc_path, template_id, output_path)
+    result = await system.process_requirements(doc_path, template_path, output_path)
     print("Test case generation completed successfully!")
 
 if __name__ == "__main__":

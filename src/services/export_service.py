@@ -33,7 +33,7 @@ class ExportService:
             styled_df = self._apply_template_styling(df, template)
             
             # 导出到Excel
-            self._save_to_excel(styled_df, path)
+            self._save_to_excel(styled_df, path, template)
             
             # 验证文件大小
             self._validate_file_size(path)
@@ -101,31 +101,54 @@ class ExportService:
                               df: pd.DataFrame, 
                               template: Template) -> pd.DataFrame:
         """Apply template styling to DataFrame."""
-        # 应用列宽
+        # 应用列宽 - 只转换为字符串类型，实际列宽在保存到Excel时应用
         for col, width in template.column_widths.items():
             if col in df.columns:
                 df[col] = df[col].astype(str)
                 
         # 应用条件格式
         for rule in template.conditional_formatting:
-            if rule['column'] in df.columns:
-                mask = df[rule['column']].str.contains(rule['condition'], na=False)
-                df.loc[mask, rule['column']] = f"*** {df.loc[mask, rule['column']]} ***"
+            if rule['column'] in df.columns and 'condition' in rule:
+                try:
+                    mask = df[rule['column']].str.contains(rule['condition'], na=False)
+                    
+                    # 应用格式 - 根据format字段的值应用不同的格式
+                    if 'format' in rule:
+                        format_type = rule['format']
+                        if format_type == 'highlight':
+                            # 高亮显示
+                            df.loc[mask, rule['column']] = f"*** {df.loc[mask, rule['column']]} ***"
+                        elif format_type == 'prefix':
+                            # 添加前缀
+                            df.loc[mask, rule['column']] = f"! {df.loc[mask, rule['column']]}"
+                        elif format_type == 'uppercase':
+                            # 转换为大写
+                            df.loc[mask, rule['column']] = df.loc[mask, rule['column']].str.upper()
+                    else:
+                        # 默认格式 - 如果没有指定format
+                        df.loc[mask, rule['column']] = f"*** {df.loc[mask, rule['column']]} ***"
+                except Exception as e:
+                    logger.warning(f"Error applying conditional format: {str(e)}")
         
         return df
     
-    def _save_to_excel(self, df: pd.DataFrame, path: Path):
+    def _save_to_excel(self, df: pd.DataFrame, path: Path, template: Template = None):
         """Save DataFrame to Excel with formatting."""
         with pd.ExcelWriter(path, engine='openpyxl') as writer:
             df.to_excel(writer, index=False, sheet_name='Test Cases')
             
-            # 自动调整列宽
+            # 应用列宽
             worksheet = writer.sheets['Test Cases']
             for idx, col in enumerate(df.columns):
-                max_length = max(
-                    df[col].astype(str).apply(len).max(),
-                    len(col)
-                )
-                # 设置最小和最大列宽
-                adjusted_width = min(max(max_length + 2, 10), 50)
-                worksheet.column_dimensions[chr(65 + idx)].width = adjusted_width
+                # 如果模板中定义了该列的宽度，则使用模板中的宽度
+                if template and col in template.column_widths:
+                    worksheet.column_dimensions[chr(65 + idx)].width = template.column_widths[col]
+                else:
+                    # 否则自动调整列宽
+                    max_length = max(
+                        df[col].astype(str).apply(len).max(),
+                        len(col)
+                    )
+                    # 设置最小和最大列宽
+                    adjusted_width = min(max(max_length + 2, 10), 50)
+                    worksheet.column_dimensions[chr(65 + idx)].width = adjusted_width

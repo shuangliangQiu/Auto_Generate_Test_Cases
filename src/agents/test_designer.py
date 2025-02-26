@@ -1,4 +1,5 @@
 # src/agents/test_designer.py
+import os
 import autogen
 from typing import Dict, List
 import logging

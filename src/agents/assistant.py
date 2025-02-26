@@ -1,5 +1,6 @@
 # src/agents/assistant.py
 import autogen
+import os
 from typing import List, Dict
 import logging
 from .requirement_analyst import RequirementAnalystAgent
@@ -7,6 +8,7 @@ from .test_designer import TestDesignerAgent
 from .test_case_writer import TestCaseWriterAgent
 from .quality_assurance import QualityAssuranceAgent
 from dotenv import load_dotenv
+
 load_dotenv()
 logger = logging.getLogger(__name__)
 
