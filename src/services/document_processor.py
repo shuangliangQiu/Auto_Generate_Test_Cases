@@ -1,6 +1,5 @@
 # src/services/document_processor.py
 from pathlib import Path
-from typing import Dict
 import logging
 from PyPDF2 import PdfReader
 from docx import Document
@@ -9,12 +8,12 @@ import markdown
 logger = logging.getLogger(__name__)
 
 class DocumentProcessor:
-    """Service for processing different types of input documents."""
+    """用于处理不同类型输入文档的服务。"""
     
     SUPPORTED_FORMATS = {'.pdf', '.docx', '.md', '.txt'}
     
     async def process_document(self, doc_path: str) -> str:
-        """Process input document and extract text content."""
+        """处理输入文档并提取文本内容。"""
         try:
             path = Path(doc_path)
             if not path.exists():
@@ -31,7 +30,7 @@ class DocumentProcessor:
             raise
     
     def _extract_content(self, file_path: Path) -> str:
-        """Extract text content from different file formats."""
+        """从不同文件格式中提取文本内容。"""
         if file_path.suffix == '.pdf':
             return self._extract_pdf(file_path)
         elif file_path.suffix == '.docx':
@@ -60,7 +59,7 @@ class DocumentProcessor:
             return file.read()
     
     def _preprocess_content(self, content: str) -> str:
-        """Preprocess extracted content for better analysis."""
-        # Remove extra whitespace and normalize line endings
+        """预处理提取的内容以便更好地分析。"""
+        # 删除多余的空白并规范化行尾
         content = ' '.join(content.split())
         return content

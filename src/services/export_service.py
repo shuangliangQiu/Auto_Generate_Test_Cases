@@ -1,5 +1,5 @@
 # src/services/export_service.py
-from typing import List, Dict
+from typing import List
 import pandas as pd
 from pathlib import Path
 import logging

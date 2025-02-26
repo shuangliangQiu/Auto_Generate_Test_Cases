@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 @dataclass
 class Template:
-    """Model representing a test case template configuration."""
+    """测试用例模板配置的模型。"""
     
     name: str
     description: str
@@ -14,7 +14,7 @@ class Template:
     conditional_formatting: List[Dict] = field(default_factory=list)
     
     def __post_init__(self):
-        # Initialize default column widths if not provided
+        # 如果未提供列宽，则初始化默认列宽
         if not self.column_widths:
             self.column_widths = {
                 'ID': 10,
@@ -28,29 +28,80 @@ class Template:
             }
     
     def add_custom_field(self, field_name: str):
-        """Add a custom field to the template."""
+        """向模板添加自定义字段。
+        
+        Args:
+            field_name: 要添加的字段名
+            
+        Raises:
+            ValueError: 当字段名无效时
+        """
+        if not isinstance(field_name, str):
+            raise ValueError("字段名必须是字符串类型")
+            
+        if not field_name.strip():
+            raise ValueError("字段名不能为空")
+            
         if field_name not in self.custom_fields:
             self.custom_fields.append(field_name)
-            self.column_widths[field_name] = 30  # Default width
+            self.column_widths[field_name] = 30  # 默认宽度
     
     def remove_custom_field(self, field_name: str):
-        """Remove a custom field from the template."""
+        """从模板中移除自定义字段。
+        
+        Args:
+            field_name: 要移除的字段名
+            
+        Raises:
+            ValueError: 当字段名无效时
+        """
+        if not isinstance(field_name, str):
+            raise ValueError("字段名必须是字符串类型")
+            
+        if not field_name.strip():
+            raise ValueError("字段名不能为空")
+            
         if field_name in self.custom_fields:
             self.custom_fields.remove(field_name)
             self.column_widths.pop(field_name, None)
     
     def add_conditional_formatting(self, rule: Dict):
-        """Add a conditional formatting rule."""
+        """添加条件格式化规则。"""
         if self._validate_formatting_rule(rule):
             self.conditional_formatting.append(rule)
     
     def _validate_formatting_rule(self, rule: Dict) -> bool:
-        """Validate conditional formatting rule."""
+        """验证条件格式化规则。
+        
+        Args:
+            rule: 包含格式化规则的字典
+            
+        Returns:
+            bool: 规则验证是否通过
+            
+        Raises:
+            ValueError: 当规则格式不正确时
+        """
+        if not isinstance(rule, dict):
+            raise ValueError("格式化规则必须是字典类型")
+            
         required_keys = ['column', 'condition', 'format']
-        return all(key in rule for key in required_keys)
+        if not all(key in rule for key in required_keys):
+            raise ValueError(f"格式化规则缺少必要的键: {', '.join(required_keys)}")
+            
+        if not isinstance(rule['column'], str) or not rule['column']:
+            raise ValueError("column必须是非空字符串")
+            
+        if not isinstance(rule['condition'], str) or not rule['condition']:
+            raise ValueError("condition必须是非空字符串")
+            
+        if not isinstance(rule['format'], str) or not rule['format']:
+            raise ValueError("format必须是非空字符串")
+            
+        return True
     
     def to_dict(self) -> dict:
-        """Convert template to dictionary format."""
+        """将模板转换为字典格式。"""
         return {
             'name': self.name,
             'description': self.description,
@@ -62,7 +113,7 @@ class Template:
     
     @classmethod
     def from_dict(cls, data: dict) -> 'Template':
-        """Create template from dictionary."""
+        """从字典创建模板。"""
         return cls(
             name=data['name'],
             description=data['description'],

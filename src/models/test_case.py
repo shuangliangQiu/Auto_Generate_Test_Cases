@@ -1,11 +1,12 @@
 # src/models/test_case.py
+import datetime
 from typing import List
 from dataclasses import dataclass
 import uuid
 
 @dataclass
 class TestCase:
-    """Model representing a test case."""
+    """测试用例模型。"""
     
     title: str
     description: str
@@ -16,15 +17,32 @@ class TestCase:
     category: str
     
     def __post_init__(self):
+        # 验证输入参数
+        if not isinstance(self.title, str) or not self.title.strip():
+            raise ValueError("标题不能为空且必须是字符串类型")
+        if not isinstance(self.description, str):
+            raise ValueError("描述必须是字符串类型")
+        if not isinstance(self.preconditions, list) or not all(isinstance(x, str) for x in self.preconditions):
+            raise ValueError("前置条件必须是字符串列表")
+        if not isinstance(self.steps, list) or not all(isinstance(x, str) for x in self.steps):
+            raise ValueError("测试步骤必须是字符串列表")
+        if not isinstance(self.expected_results, list) or not all(isinstance(x, str) for x in self.expected_results):
+            raise ValueError("预期结果必须是字符串列表")
+        if not isinstance(self.priority, str) or self.priority not in ["高", "中", "低"]:
+            raise ValueError("优先级必须是'高'、'中'、'低'之一")
+        if not isinstance(self.category, str) or not self.category.strip():
+            raise ValueError("类别不能为空且必须是字符串类型")
+            
+        # 初始化其他属性
         self.id = str(uuid.uuid4())
         self.status = "Draft"
-        self.created_at = None
-        self.updated_at = None
+        self.created_at = datetime.datetime.now().isoformat()
+        self.updated_at = self.created_at
         self.created_by = None
         self.last_updated_by = None
         
     def to_dict(self) -> dict:
-        """Convert test case to dictionary format."""
+        """将测试用例转换为字典格式。"""
         return {
             'id': self.id,
             'title': self.title,
@@ -43,7 +61,7 @@ class TestCase:
     
     @classmethod
     def from_dict(cls, data: dict) -> 'TestCase':
-        """Create test case from dictionary."""
+        """从字典创建测试用例。"""
         instance = cls(
             title=data['title'],
             description=data['description'],
@@ -54,7 +72,7 @@ class TestCase:
             category=data['category']
         )
         
-        # Set additional attributes
+        # 设置额外属性
         instance.id = data.get('id', instance.id)
         instance.status = data.get('status', instance.status)
         instance.created_at = data.get('created_at')

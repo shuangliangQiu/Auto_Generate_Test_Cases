@@ -1,7 +1,9 @@
 # src/agents/assistant.py
+import os
 import autogen
 import os
 from typing import List, Dict
+from typing import List
 import logging
 from .requirement_analyst import RequirementAnalystAgent
 from .test_designer import TestDesignerAgent
@@ -215,3 +217,17 @@ class AssistantAgent:
                 progress['current_phase'] = 'completed'
 
             return progress
+            
+        except Exception as e:
+            logger.error(f"监控进度错误: {str(e)}")
+            return {
+                'total_phases': 4,
+                'completed_phases': 0,
+                'current_phase': '',
+                'phase_status': {
+                    '需求分析': {'status': 'error', 'completion': 0},
+                    '测试设计': {'status': 'error', 'completion': 0},
+                    '测试用例编写': {'status': 'error', 'completion': 0},
+                    '质量保证': {'status': 'error', 'completion': 0}
+                }
+            }
