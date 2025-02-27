@@ -1,20 +1,29 @@
 # Core dependencies
 python-dotenv>=1.0.0
-autogen>=0.2.0
+autogen>=1.0.0
 asyncio>=3.4.3
-
-# Logging and utilities
+pydantic>=2.4.2
+fastapi>=0.104.0
+uvicorn>=0.23.2
 
 # Document processing
-pandas>=2.0.0
+python-docx>=0.8.11
+PyPDF2>=3.0.1
+markdown>=3.4.3
+pandas>=2.1.1
 openpyxl>=3.1.2
+python-multipart>=0.0.6
+aiofiles>=23.2.1
 
-# Type hints
+# Type hints and utilities
 typing>=3.7.4.3
+tenacity>=8.2.3
+numpy>=1.24.3
 
 # Testing
-pytest>=7.4.0
+pytest>=7.4.2
 pytest-asyncio>=0.21.1
+pytest-cov>=4.1.0
 
 # Development tools
 black>=23.7.0
