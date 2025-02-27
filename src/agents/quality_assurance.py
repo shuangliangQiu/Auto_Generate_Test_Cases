@@ -27,8 +27,57 @@ class QualityAssuranceAgent:
         
         self.agent = autogen.AssistantAgent(
             name="quality_assurance",
-            system_message="""你是一位严谨的质量保证专家。你的职责是审查和改进
-            测试用例，确保它们符合质量标准。""",
+            system_message='''你是一位严谨的质量保证专家。你的职责是审查和改进
+            测试用例，确保它们符合质量标准。
+
+            请按照以下 JSON 格式提供审查结果：
+            {
+                "reviewed_cases": [
+                    {
+                        "id": "TC001",
+                        "title": "测试用例标题",
+                        "preconditions": [
+                            "前置条件1",
+                            "前置条件2"
+                        ],
+                        "steps": [
+                            "测试步骤1",
+                            "测试步骤2"
+                        ],
+                        "expected_results": [
+                            "预期结果1",
+                            "预期结果2"
+                        ],
+                        "priority": "P0",
+                        "category": "功能测试",
+                        "boundary_conditions": [
+                            "边界条件1",
+                            "边界条件2"
+                        ],
+                        "error_scenarios": [
+                            "错误场景1",
+                            "错误场景2"
+                        ]
+                    }
+                ],
+                "review_comments": [
+                    {
+                        "case_id": "TC001",
+                        "completeness": ["完整性建议1", "完整性建议2"],
+                        "clarity": ["清晰度建议1", "清晰度建议2"],
+                        "executability": ["可执行性建议1", "可执行性建议2"],
+                        "boundary_cases": ["边界情况建议1", "边界情况建议2"],
+                        "error_scenarios": ["错误场景建议1", "错误场景建议2"]
+                    }
+                ]
+            }
+
+            注意：
+            1. 所有输出必须严格遵循上述 JSON 格式
+            2. 每个数组至少包含一个有效项
+            3. 所有文本必须使用双引号
+            4. JSON 必须是有效的且可解析的
+            5. 每个测试用例必须包含所有必需字段''',
             llm_config={"config_list": self.config_list}
         )
         
@@ -78,7 +127,7 @@ class QualityAssuranceAgent:
             logger.error(f"测试用例审查错误: {str(e)}")
             raise
 
-    def _process_review(self, original_cases: List[Dict], review_feedback: str) -> List[Dict]:
+    def _process_review(self, original_cases: List[Dict], review_feedback) -> List[Dict]:
         """处理审查反馈并更新测试用例。"""
         reviewed_cases = []
         for case in original_cases:
@@ -86,16 +135,34 @@ class QualityAssuranceAgent:
             reviewed_cases.append(improved_case)
         return reviewed_cases
 
-    def _improve_test_case(self, test_case: Dict, feedback: str) -> Dict:
+    def _improve_test_case(self, test_case: Dict, feedback) -> Dict:
         """根据反馈改进测试用例。"""
         try:
-            if not test_case or not feedback:
-                logger.warning("测试用例或反馈为空")
+            if not test_case:
+                logger.warning("测试用例为空")
+                return test_case
+                
+            if not feedback:
+                logger.warning("反馈为空")
                 return test_case
 
             # 创建改进后的测试用例副本
             improved_case = test_case.copy()
             
+            # 检查feedback类型
+            if isinstance(feedback, dict):
+                # 如果是字典类型，尝试从content字段获取内容
+                if 'content' in feedback:
+                    feedback = feedback['content']
+                else:
+                    logger.error(f"无法从字典中提取反馈内容: {feedback}")
+                    return test_case
+            
+            # 确保feedback是字符串类型
+            if not isinstance(feedback, str):
+                logger.error(f"反馈不是字符串类型: {type(feedback)}")
+                return test_case
+                
             # 解析反馈内容
             feedback_sections = [line.strip() for line in feedback.split('\n') if line.strip()]
             current_section = None

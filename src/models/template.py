@@ -114,9 +114,10 @@ class Template:
     @classmethod
     def from_dict(cls, data: dict) -> 'Template':
         """从字典创建模板。"""
+        # 提供默认值，以防字典中缺少必要的键
         return cls(
-            name=data['name'],
-            description=data['description'],
+            name=data.get('name', 'Default Template'),
+            description=data.get('description', 'Default test case template'),
             version=data.get('version', '1.0'),
             custom_fields=data.get('custom_fields', []),
             column_widths=data.get('column_widths', {}),

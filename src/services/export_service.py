@@ -16,8 +16,8 @@ class ExportService:
         self.supported_formats = ['.xlsx']
         self.max_file_size_mb = 50  # 最大文件大小限制(MB)
     
-    async def export_to_excel(self, 
-                            test_cases: List[TestCase],
+    async def export_to_excel(self,
+                            test_cases: List,
                             template: Template,
                             output_path: str) -> str:
         """Export test cases to Excel file using specified template."""
@@ -69,27 +69,47 @@ class ExportService:
             path.unlink()  # 删除超大文件
             raise ValueError(f"Generated file size ({file_size_mb:.2f}MB) exceeds limit ({self.max_file_size_mb}MB)")
     
-    def _convert_to_dataframe(self, 
-                            test_cases: List[TestCase], 
+    def _convert_to_dataframe(self,
+                            test_cases: List,
                             template: Template) -> pd.DataFrame:
         """Convert test cases to pandas DataFrame based on template."""
         data = []
         for test_case in test_cases:
-            row = {
-                'ID': test_case.id,
-                'Title': test_case.title,
-                'Description': test_case.description,
-                'Preconditions': '\n'.join(test_case.preconditions),
-                'Steps': '\n'.join(test_case.steps),
-                'Expected Results': '\n'.join(test_case.expected_results),
-                'Priority': test_case.priority,
-                'Category': test_case.category,
-                'Status': test_case.status,
-                'Created At': test_case.created_at,
-                'Updated At': test_case.updated_at,
-                'Created By': test_case.created_by,
-                'Last Updated By': test_case.last_updated_by
-            }
+            # 检查test_case是否为字典类型
+            if isinstance(test_case, dict):
+                # 如果是字典类型，直接使用字典的值
+                row = {
+                    'ID': test_case.get('id', ''),
+                    'Title': test_case.get('title', ''),
+                    'Description': test_case.get('description', ''),
+                    'Preconditions': '\n'.join(test_case.get('preconditions', [])),
+                    'Steps': '\n'.join(test_case.get('steps', [])),
+                    'Expected Results': '\n'.join(test_case.get('expected_results', [])),
+                    'Priority': test_case.get('priority', ''),
+                    'Category': test_case.get('category', ''),
+                    'Status': test_case.get('status', 'Draft'),
+                    'Created At': test_case.get('created_at', ''),
+                    'Updated At': test_case.get('updated_at', ''),
+                    'Created By': test_case.get('created_by', ''),
+                    'Last Updated By': test_case.get('last_updated_by', '')
+                }
+            else:
+                # 如果是TestCase对象，使用对象的属性
+                row = {
+                    'ID': getattr(test_case, 'id', ''),
+                    'Title': getattr(test_case, 'title', ''),
+                    'Description': getattr(test_case, 'description', ''),
+                    'Preconditions': '\n'.join(getattr(test_case, 'preconditions', [])),
+                    'Steps': '\n'.join(getattr(test_case, 'steps', [])),
+                    'Expected Results': '\n'.join(getattr(test_case, 'expected_results', [])),
+                    'Priority': getattr(test_case, 'priority', ''),
+                    'Category': getattr(test_case, 'category', ''),
+                    'Status': getattr(test_case, 'status', 'Draft'),
+                    'Created At': getattr(test_case, 'created_at', ''),
+                    'Updated At': getattr(test_case, 'updated_at', ''),
+                    'Created By': getattr(test_case, 'created_by', ''),
+                    'Last Updated By': getattr(test_case, 'last_updated_by', '')
+                }
             # 添加自定义字段
             for field in template.custom_fields:
                 row[field] = getattr(test_case, field, '')
