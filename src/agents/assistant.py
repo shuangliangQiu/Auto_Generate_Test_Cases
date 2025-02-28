@@ -1,5 +1,7 @@
 # src/agents/assistant.py
 import os
+import re
+import json
 import autogen
 from typing import List, Dict
 import logging
@@ -180,6 +182,17 @@ class AssistantAgent:
             
             # 监控进度
             self._monitor_progress()
+            
+            # 检查测试设计结果是否为空
+            if not design_result or (isinstance(design_result, dict) and not any(design_result.values())):
+                logger.warning("测试设计结果为空，流程结束")
+                return {
+                    "status": "completed",
+                    "message": "测试设计结果为空，流程结束",
+                    "requirements": analysis_result,
+                    "test_strategy": None,
+                    "test_cases": None
+                }
 
             # 3. 测试用例编写
             test_case_writer = next((agent for agent in self.agents if isinstance(agent, TestCaseWriterAgent)), None)
@@ -190,6 +203,17 @@ class AssistantAgent:
                 'test_case_writer',
                 {'test_strategy': design_result}
             )
+            
+            # 检查测试用例生成结果
+            if test_cases is None:
+                logger.warning("测试用例生成失败，因为测试策略无效，流程终止")
+                return {
+                    "status": "completed",
+                    "message": "测试策略无效，流程终止",
+                    "requirements": analysis_result,
+                    "test_strategy": design_result,
+                    "test_cases": None
+                }
             
             # 监控进度
             self._monitor_progress()
@@ -285,6 +309,10 @@ class AssistantAgent:
             TestCaseWriteResponse, QualityAssuranceRequest, QualityAssuranceResponse,
             ErrorResponse, TestScenario
         )
+        from src.utils.agent_io import AgentIO
+        
+        # 初始化AgentIO用于读取各个agent的结果
+        agent_io = AgentIO()
         
         try:
             # 根据代理类型查找，而不是名称
@@ -355,28 +383,86 @@ class AssistantAgent:
                 }
                 # 使用同步方式调用design
                 result = target_agent.design(complete_requirements)
+                
+                # 记录原始结果，用于调试
+                logger.info(f"测试设计原始结果: {result}")
+                
+                # 尝试从响应中提取JSON数据
+                if isinstance(result, str):
+                    # 通过正则表达式匹配任意代码块（兼容 ```json 和纯 ```）
+                    cleaned = re.sub(r'^```(?:json)?\s*|\s*```$', '', result, flags=re.MULTILINE)
+        
+                    # 二次清理首尾空白
+                    cleaned = cleaned.strip()
+                    result = json.loads(cleaned)
+
                 # 验证响应消息格式
                 response = TestDesignResponse(**result)
                 logger.info(f"测试设计完成，结果: {response.dict()}")
-                return response.dict()
                 
+                # 确保测试设计结果被保存到target_agent.last_design属性中
+                # 这样后续流程可以直接从代理实例中获取最新的设计结果
+                if hasattr(target_agent, 'last_design'):
+                    target_agent.last_design = response.dict()
+                    logger.info("测试设计结果已保存到代理实例中")
+                else:
+                    logger.warning("测试设计代理没有last_design属性，无法保存设计结果")
+                
+                return response.dict()
             elif to_agent == 'test_case_writer':
                 target_agent = next((agent for agent in self.agents if isinstance(agent, TestCaseWriterAgent)), None)
-                # 验证请求消息格式
-                request = TestCaseWriteRequest(**message)
-                logger.info("开始测试用例编写")
-                # 使用同步方式调用generate
-                result = target_agent.generate(request.test_strategy)
-                # 验证响应消息格式
-                # 确保test_cases是一个列表
-                if isinstance(result, dict) and 'test_cases' in result:
-                    test_cases = result['test_cases']
-                else:
-                    test_cases = result if isinstance(result, list) else []
                 
-                response = TestCaseWriteResponse(**{'test_cases': test_cases})
-                logger.info(f"测试用例生成完成，结果: {response.dict()}")
-                return test_cases  # 直接返回test_cases列表，而不是整个响应字典
+                # 记录传递给测试用例编写者的测试策略
+                logger.info(f"传递给测试用例编写者的测试策略: {message}")
+                
+                # 验证请求消息格式
+                try:
+                    request = TestCaseWriteRequest(**message)
+                except Exception as e:
+                    logger.error(f"测试用例编写请求格式验证失败: {str(e)}")
+                    # 如果验证失败，尝试直接使用message
+                    request = message
+                
+                logger.info("开始测试用例编写")
+                
+                # 获取测试策略
+                # 确保我们能够正确获取测试策略，无论它是作为对象属性还是字典键值
+                test_strategy = None
+                if hasattr(request, 'test_strategy'):
+                    test_strategy = request.test_strategy
+                elif isinstance(message, dict) and 'test_strategy' in message:
+                    test_strategy = message['test_strategy']
+                    # 确保测试策略是一个有效的字典
+                    if not isinstance(test_strategy, dict):
+                        logger.warning(f"测试策略格式不正确: {type(test_strategy)}")
+                        test_strategy = {}
+                else:
+                    logger.warning("无法从请求中获取测试策略")
+                    test_strategy = {}
+                
+                # 检查测试策略是否为空
+                if not test_strategy or (isinstance(test_strategy, dict) and not any(test_strategy.values())):
+                    logger.warning("测试策略为空或格式不正确，流程结束")
+                    # 返回None，表示测试策略无效，需要终止流程
+                    return None
+                
+                # 使用同步方式调用generate
+                try:
+                    result = target_agent.generate(test_strategy)
+                    
+                    # 验证响应消息格式
+                    # 确保test_cases是一个列表
+                    if isinstance(result, dict) and 'test_cases' in result:
+                        test_cases = result['test_cases']
+                    else:
+                        test_cases = result if isinstance(result, list) else []
+                    
+                    response = TestCaseWriteResponse(**{'test_cases': test_cases})
+                    logger.info(f"测试用例生成完成，结果: {response.dict()}")
+                    return test_cases  # 直接返回test_cases列表，而不是整个响应字典
+                except Exception as e:
+                    logger.error(f"测试用例生成失败: {str(e)}")
+                    return []  # 返回空列表表示生成失败
                 
             elif to_agent == 'quality_assurance':
                 target_agent = next((agent for agent in self.agents if isinstance(agent, QualityAssuranceAgent)), None)

@@ -4,6 +4,7 @@ import autogen
 from typing import Dict, List
 import logging
 from dotenv import load_dotenv
+from src.utils.agent_io import AgentIO
 load_dotenv()
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,9 @@ class TestCaseWriterAgent:
                 "api_version": model_version
             }
         ]
+        
+        # 初始化AgentIO用于保存和加载测试用例
+        self.agent_io = AgentIO()
         
         self.agent = autogen.AssistantAgent(
             name="test_case_writer",
@@ -65,7 +69,20 @@ class TestCaseWriterAgent:
         
         # 添加last_cases属性，用于跟踪最近生成的测试用例
         self.last_cases = None
+        
+        # 尝试加载之前的测试用例结果
+        self._load_last_cases()
 
+    def _load_last_cases(self):
+        """加载之前保存的测试用例结果"""
+        try:
+            result = self.agent_io.load_result("test_case_writer")
+            if result:
+                self.last_cases = result
+                logger.info("成功加载之前的测试用例生成结果")
+        except Exception as e:
+            logger.error(f"加载测试用例结果时出错: {str(e)}")
+    
     def generate(self, test_strategy: Dict) -> List[Dict]:
         """基于测试策略生成测试用例。"""
         try:
@@ -76,12 +93,40 @@ class TestCaseWriterAgent:
                 code_execution_config={"use_docker": False}
             )
 
+            # 提取测试覆盖矩阵和优先级信息
+            coverage_matrix = test_strategy.get('coverage_matrix', [])
+            priorities = test_strategy.get('priorities', [])
+            test_approach = test_strategy.get('test_approach', {})
+            
+            # 构建更详细的提示，包含覆盖矩阵和优先级信息
+            coverage_info = "\n测试覆盖矩阵:\n"
+            for item in coverage_matrix:
+                coverage_info += f"- 功能: {item.get('feature', '')}, 测试类型: {item.get('test_type', '')}\n"
+                
+            priority_info = "\n测试优先级:\n"
+            for item in priorities:
+                priority_info += f"- {item.get('level', '')}: {item.get('description', '')}\n"
+            
+            approach_info = "\n测试方法:\n"
+            if isinstance(test_approach, dict):
+                for key, value in test_approach.items():
+                    if isinstance(value, list):
+                        approach_info += f"- {key}: {', '.join(value)}\n"
+                    else:
+                        approach_info += f"- {key}: {value}\n"
+
             # 生成测试用例
             user_proxy.initiate_chat(
                 self.agent,
                 message=f"""基于以下测试策略创建详细的测试用例：
                 
-                测试策略: {test_strategy}
+                {approach_info}
+                {coverage_info}
+                {priority_info}
+                
+                请确保每个测试用例都对应测试覆盖矩阵中的一个或多个功能点，并遵循定义的优先级策略。
+                测试用例的优先级必须使用测试优先级中定义的级别（如P0、P1等）。
+                测试用例的类别应该与测试覆盖矩阵中的测试类型相对应。
                 
                 对每个测试用例，请提供：
                 1. 用例ID
@@ -89,23 +134,69 @@ class TestCaseWriterAgent:
                 3. 前置条件
                 4. 测试步骤
                 5. 预期结果
-                6. 优先级
-                7. 类别
+                6. 优先级（使用上述优先级定义）
+                7. 类别（对应测试覆盖矩阵中的测试类型）
                 
                 请直接提供测试用例，无需等待进一步确认。""",
                 max_turns=1  # 限制对话轮次为1，避免死循环
             )
 
+            # 尝试解析测试用例
             test_cases = self._parse_test_cases(self.agent.last_message())
             
-            # 如果解析结果为空，返回空列表
+            # 如果解析结果为空，尝试重新生成一次
             if not test_cases:
-                logger.warning("测试用例生成为空")
-                return []
+                logger.warning("第一次测试用例生成为空，尝试重新生成")
+                
+                # 构建更明确的提示，强调必须基于测试覆盖矩阵和优先级
+                retry_message = f"""请重新创建测试用例，确保严格按照测试设计生成。
+                
+                测试覆盖矩阵中的每个功能点都必须有对应的测试用例：
+                {coverage_info}
+                
+                测试用例必须使用以下优先级：
+                {priority_info}
+                
+                每个测试用例必须包含：ID、标题、前置条件、测试步骤、预期结果、优先级和类别。
+                优先级必须使用P0、P1等格式，类别必须与测试覆盖矩阵中的测试类型对应。
+                
+                请以JSON格式返回测试用例，确保格式正确。"""
+                
+                # 重新尝试生成测试用例
+                user_proxy.initiate_chat(
+                    self.agent,
+                    message=retry_message,
+                    max_turns=1
+                )
+                
+                # 再次解析测试用例
+                test_cases = self._parse_test_cases(self.agent.last_message())
+                
+                # 如果仍然为空，记录错误并返回空列表
+                if not test_cases:
+                    logger.error("重新生成测试用例仍然失败，无法生成符合测试设计的测试用例")
+                    return []
+            
+            # 验证测试用例是否与测试覆盖矩阵对应
+            if coverage_matrix and test_cases:
+                coverage_features = {item.get('feature', '') for item in coverage_matrix if 'feature' in item}
+                test_case_categories = {tc.get('category', '') for tc in test_cases if 'category' in tc}
+                
+                # 记录覆盖情况
+                logger.info(f"测试覆盖矩阵功能点: {coverage_features}")
+                logger.info(f"测试用例类别: {test_case_categories}")
+                
+                # 检查是否有未覆盖的功能点
+                uncovered = coverage_features - test_case_categories
+                if uncovered:
+                    logger.warning(f"以下功能点未被测试用例覆盖: {uncovered}")
             
             # 保存测试用例到last_cases属性
             self.last_cases = test_cases
             logger.info(f"测试用例生成完成，共生成 {len(test_cases)} 个测试用例")
+            
+            # 将测试用例保存到文件
+            self.agent_io.save_result("test_case_writer", test_cases)
             
             return test_cases
 
@@ -142,57 +233,34 @@ class TestCaseWriterAgent:
                     json_data = json.loads(json_str)
                     if 'test_cases' in json_data and isinstance(json_data['test_cases'], list):
                         logger.info(f"成功从JSON中解析出 {len(json_data['test_cases'])} 个测试用例")
-                        # 创建默认测试用例，以防JSON中的测试用例不完整
-                        default_test_cases = [
-                            {
-                                "id": "TC001",
-                                "title": "测试PDF文件上传功能",
-                                "preconditions": ["用户已登录系统", "用户位于文件上传页面"],
-                                "steps": ["选择一个有效的PDF文件", "点击上传按钮"],
-                                "expected_results": ["文件成功上传", "显示上传成功的状态标记"],
-                                "priority": "P0",
-                                "category": "功能测试"
-                            },
-                            {
-                                "id": "TC002",
-                                "title": "测试图片文件上传功能",
-                                "preconditions": ["用户已登录系统", "用户位于文件上传页面"],
-                                "steps": ["选择一个有效的图片文件(JPG/PNG)", "点击上传按钮"],
-                                "expected_results": ["文件成功上传", "显示上传成功的状态标记"],
-                                "priority": "P0",
-                                "category": "功能测试"
-                            },
-                            {
-                                "id": "TC003",
-                                "title": "测试批量文件上传功能",
-                                "preconditions": ["用户已登录系统", "用户位于文件上传页面"],
-                                "steps": ["选择多个PDF和图片文件", "点击上传按钮"],
-                                "expected_results": ["所有文件成功上传", "每个文件都显示上传成功的状态标记"],
-                                "priority": "P1",
-                                "category": "功能测试"
-                            }
-                        ]
                         
-                        # 如果JSON中的测试用例为空，使用默认测试用例
-                        if len(json_data['test_cases']) == 0:
-                            logger.warning("JSON中的测试用例为空，使用默认测试用例")
-                            return default_test_cases
+                        # 验证和规范化测试用例
+                        validated_test_cases = []
+                        for test_case in json_data['test_cases']:
+                            # 确保所有必需字段都存在
+                            if self._validate_test_case(test_case):
+                                # 规范化优先级格式（确保是P0、P1等格式）
+                                if 'priority' in test_case and not test_case['priority'].startswith('P'):
+                                    test_case['priority'] = f"P{test_case['priority']}" if test_case['priority'].isdigit() else test_case['priority']
+                                
+                                # 确保类别字段存在且有意义
+                                if 'category' not in test_case or not test_case['category']:
+                                    test_case['category'] = '功能测试'
+                                
+                                validated_test_cases.append(test_case)
+                            else:
+                                logger.warning(f"测试用例验证失败，跳过: {test_case.get('id', 'unknown')}")
                         
-                        return json_data['test_cases']
+                        # 如果验证后的测试用例为空，记录警告并返回空列表
+                        if not validated_test_cases:
+                            logger.warning("验证后的测试用例为空，需要重新生成")
+                            return []
+                        
+                        return validated_test_cases
                 except json.JSONDecodeError as e:
                     logger.error(f"JSON解析错误: {str(e)}")
-                    # 返回默认测试用例
-                    return [
-                        {
-                            "id": "TC001",
-                            "title": "测试PDF文件上传功能",
-                            "preconditions": ["用户已登录系统", "用户位于文件上传页面"],
-                            "steps": ["选择一个有效的PDF文件", "点击上传按钮"],
-                            "expected_results": ["文件成功上传", "显示上传成功的状态标记"],
-                            "priority": "P0",
-                            "category": "功能测试"
-                        }
-                    ]
+                    # 返回空列表，表示解析失败
+                    return []
             
             # 如果没有找到JSON格式的响应，尝试使用原来的解析方法
             sections = message.split('\n')
@@ -209,6 +277,9 @@ class TestCaseWriterAgent:
                 if line.lower().startswith('id:'):
                     if current_test_case:
                         if self._validate_test_case(current_test_case):
+                            # 规范化优先级格式
+                            if 'priority' in current_test_case and not current_test_case['priority'].startswith('P'):
+                                current_test_case['priority'] = f"P{current_test_case['priority']}" if current_test_case['priority'].isdigit() else current_test_case['priority']
                             test_cases.append(current_test_case)
                     current_test_case = {
                         'id': '',
@@ -249,7 +320,15 @@ class TestCaseWriterAgent:
             
             # 如果存在最后一个测试用例则添加
             if current_test_case and self._validate_test_case(current_test_case):
+                # 规范化优先级格式
+                if 'priority' in current_test_case and not current_test_case['priority'].startswith('P'):
+                    current_test_case['priority'] = f"P{current_test_case['priority']}" if current_test_case['priority'].isdigit() else current_test_case['priority']
                 test_cases.append(current_test_case)
+            
+            # 如果没有解析出任何测试用例，返回空列表
+            if not test_cases:
+                logger.warning("未能解析出任何测试用例，需要重新生成")
+                return []
             
             return test_cases
         except Exception as e:
@@ -261,23 +340,48 @@ class TestCaseWriterAgent:
         try:
             # 检查是否所有必需字段都存在
             required_fields = [
-                "id", "title", "preconditions", "steps", 
+                "id", "title", "preconditions", "steps",
                 "expected_results", "priority", "category"
             ]
             if not all(field in test_case for field in required_fields):
+                logger.warning(f"测试用例缺少必需字段: {[field for field in required_fields if field not in test_case]}")
                 return False
             
             # 验证字段内容
             if not test_case["id"] or not test_case["title"]:
+                logger.warning(f"测试用例ID或标题为空: {test_case.get('id', 'unknown')}")
                 return False
             
             # 确保步骤和预期结果不为空
             if not test_case["steps"] or not test_case["expected_results"]:
+                logger.warning(f"测试用例步骤或预期结果为空: {test_case.get('id', 'unknown')}")
                 return False
             
             # 验证优先级格式（如 P0, P1, P2）
-            if not test_case["priority"].startswith('P') or not test_case["priority"][1:].isdigit():
+            # 注意：我们在解析时会规范化优先级格式，所以这里不再严格要求格式
+            if not test_case["priority"]:
+                logger.warning(f"测试用例优先级为空: {test_case.get('id', 'unknown')}")
                 return False
+            
+            # 验证类别不为空
+            if not test_case["category"]:
+                logger.warning(f"测试用例类别为空: {test_case.get('id', 'unknown')}")
+                return False
+            
+            # 验证前置条件是否为列表
+            if not isinstance(test_case["preconditions"], list):
+                logger.warning(f"测试用例前置条件不是列表: {test_case.get('id', 'unknown')}")
+                test_case["preconditions"] = [test_case["preconditions"]] if test_case["preconditions"] else []
+            
+            # 验证步骤是否为列表
+            if not isinstance(test_case["steps"], list):
+                logger.warning(f"测试用例步骤不是列表: {test_case.get('id', 'unknown')}")
+                test_case["steps"] = [test_case["steps"]] if test_case["steps"] else []
+                
+            # 验证预期结果是否为列表
+            if not isinstance(test_case["expected_results"], list):
+                logger.warning(f"测试用例预期结果不是列表: {test_case.get('id', 'unknown')}")
+                test_case["expected_results"] = [test_case["expected_results"]] if test_case["expected_results"] else []
             
             return True
         except Exception as e:

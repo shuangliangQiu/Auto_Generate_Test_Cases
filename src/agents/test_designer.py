@@ -1,9 +1,11 @@
 # src/agents/test_designer.py
 import os
+import ast
 import autogen
 from typing import Dict, List
 import logging
 from dotenv import load_dotenv
+from src.utils.agent_io import AgentIO
 load_dotenv()
 logger = logging.getLogger(__name__)
 
@@ -24,6 +26,9 @@ class TestDesignerAgent:
                 "api_version": model_version
             }
         ]
+        
+        # 初始化AgentIO用于保存和加载设计结果
+        self.agent_io = AgentIO()
         
         self.agent = autogen.AssistantAgent(
             name="test_designer",
@@ -93,7 +98,20 @@ class TestDesignerAgent:
         
         # 添加last_design属性，用于跟踪最近的设计结果
         self.last_design = None
+        
+        # 尝试加载之前的设计结果
+        self._load_last_design()
 
+    def _load_last_design(self):
+        """加载之前保存的设计结果"""
+        try:
+            result = self.agent_io.load_result("test_designer")
+            if result:
+                self.last_design = result
+                logger.info("成功加载之前的测试设计结果")
+        except Exception as e:
+            logger.error(f"加载测试设计结果时出错: {str(e)}")
+    
     def design(self, requirements: Dict) -> Dict:
         """基于分析后的需求设计测试策略。
         
@@ -127,31 +145,31 @@ class TestDesignerAgent:
                 请按照以下格式提供测试策略：
                 
                 1. 测试方法
-                   - 功能测试方法和工具
-                   - 性能测试方法和工具
-                   - 安全测试方法和工具
-                   - 兼容性测试方法和工具
-                   - 可用性测试方法和工具
-                   - 建议使用的测试框架
+                - 功能测试方法和工具
+                - 性能测试方法和工具
+                - 安全测试方法和工具
+                - 兼容性测试方法和工具
+                - 可用性测试方法和工具
+                - 建议使用的测试框架
                 
                 2. 测试覆盖矩阵
-                   - 每个功能需求的测试类型
-                   - 每个非功能需求的测试类型
-                   - 每个测试场景的覆盖方案
-                   - 风险领域的测试覆盖
+                - 每个功能需求的测试类型
+                - 每个非功能需求的测试类型
+                - 每个测试场景的覆盖方案
+                - 风险领域的测试覆盖
                 
                 3. 测试优先级
-                   P0：关键功能和高风险项
-                   P1：核心业务功能
-                   P2：重要但非核心功能
-                   P3：次要功能
-                   P4：低优先级功能
+                P0：关键功能和高风险项
+                P1：核心业务功能
+                P2：重要但非核心功能
+                P3：次要功能
+                P4：低优先级功能
                 
                 4. 资源估算
-                   - 预计所需时间
-                   - 所需人员配置
-                   - 测试工具清单
-                   - 其他资源需求
+                - 预计所需时间
+                - 所需人员配置
+                - 测试工具清单
+                - 其他资源需求
                 
                 请直接提供分析结果，确保每个部分都有具体的内容和建议。""",
                 max_turns=1  # 限制对话轮次为1，避免死循环
@@ -197,22 +215,109 @@ class TestDesignerAgent:
                     }
                 }
 
-            test_strategy = {
-                "test_approach": self._extract_test_approach(response_str),
-                "coverage_matrix": self._create_coverage_matrix(response_str),
-                "priorities": self._extract_priorities(response_str),
-                "resource_estimation": self._extract_resource_estimation(response_str)
-            }
+            # 尝试解析JSON响应
+            import json
+            import re
             
-            # 保存设计结果到last_design属性
-            self.last_design = test_strategy
-            logger.info("测试设计完成")
+            # 打印原始响应以便调试
+            logger.info(f"AI响应内容: {response_str[:200]}...")  # 只打印前200个字符避免日志过长
+            
+            # 尝试从响应中提取JSON部分 - 支持多种格式
+            json_match = re.search(r'```(?:json)?\s*({\s*".*?})\s*```', response_str, re.DOTALL)
+            if not json_match:
+                # 尝试直接从响应中查找JSON对象
+                json_match = re.search(r'({[\s\S]*"test_approach"[\s\S]*})', response_str)
+            
+            if json_match:
+                try:
+                    # 提取JSON字符串并解析
+                    json_str = json_match.group(1)
+                    # 清理可能的格式问题
+                    json_str = json_str.strip()
+                    # print(f"json_str_type: {type(json_str)}  ")
+                    json_str = re.sub(r'```json|```', '', json_str)
+                    json_str = json_str.replace(r'\n', '\n').replace(r'\"', '"')
+                    # print(f"content 的字符串内容：{json_str}")
+                    json_str_fix = re.sub(r"'content':\s*'(.*?)'",  # 匹配content字段的值
+                        lambda m: "'content': '''{}'''".format(m.group(1).replace("'''", "\\'''")),  # 转换为三重引号
+                        json_str,
+                        flags=re.DOTALL
+                    )
+                    json_init_dict = ast.literal_eval(json_str_fix)
+                    # print(f"json_init_dict 类型：{type(json_init_dict)}")
+                    json_str = json.dumps(json_init_dict["content"])
+                    test_strategy = json.loads(json_str)
+                    logger.info("成功从JSON响应中提取测试策略")
+                    
+                    # 确保test_strategy是字典类型
+                    if isinstance(test_strategy, str):
+                        test_strategy = json.loads(test_strategy)
+                    
+                    # 保存设计结果到last_design属性
+                    self.last_design = test_strategy
+                    
+                    # 将设计结果保存到文件
+                    self.agent_io.save_result("test_designer", test_strategy)
+            
+                    logger.info("测试设计完成")
 
-            return test_strategy
+                    return test_strategy
+
+                except Exception as e:
+                    logger.error(f"测试设计错误: {str(e)}")
+                    # 发生异常时返回默认结构
+                    return {
+                        "test_approach": {
+                            "methodology": [],
+                            "tools": [],
+                            "frameworks": []
+                        },
+                        "coverage_matrix": [],
+                        "priorities": [],
+                        "resource_estimation": {
+                            "time": None,
+                            "personnel": None,
+                            "tools": [],
+                            "additional_resources": []
+                        }
+                    }
+            else:
+                # 如果无法提取JSON，返回默认结构
+                logger.warning("无法从响应中提取JSON格式的测试策略")
+                return {
+                    "test_approach": {
+                        "methodology": [],
+                        "tools": [],
+                        "frameworks": []
+                    },
+                    "coverage_matrix": [],
+                    "priorities": [],
+                    "resource_estimation": {
+                        "time": None,
+                        "personnel": None,
+                        "tools": [],
+                        "additional_resources": []
+                    }
+                }
 
         except Exception as e:
-            logger.error(f"测试设计错误: {str(e)}")
-            raise
+            logger.error(f"测试设计过程中出错: {str(e)}")
+            # 发生异常时返回默认结构
+            return {
+                "test_approach": {
+                    "methodology": [],
+                    "tools": [],
+                    "frameworks": []
+                },
+                "coverage_matrix": [],
+                "priorities": [],
+                "resource_estimation": {
+                    "time": None,
+                    "personnel": None,
+                    "tools": [],
+                    "additional_resources": []
+                }
+            }
 
     def _extract_test_approach(self, message: str) -> Dict:
         """从代理消息中提取测试方法详情。"""

@@ -8,6 +8,7 @@ import logging
 from typing import Dict, Optional
 from models.template import Template
 import json
+from src.utils.agent_io import AgentIO
 
 from agents.assistant import AssistantAgent
 from agents.requirement_analyst import RequirementAnalystAgent
@@ -76,6 +77,10 @@ class AITestingSystem:
             test_cases = None
             reviewed_cases = None
             
+            # 初始化AgentIO用于读取各个agent的结果
+            agent_io = AgentIO()
+            
+            # 首先尝试从agent实例中获取结果
             for agent in self.assistant.agents:
                 if isinstance(agent, RequirementAnalystAgent) and hasattr(agent, 'last_analysis'):
                     requirements = agent.last_analysis
@@ -85,6 +90,23 @@ class AITestingSystem:
                     test_cases = agent.last_cases
                 elif isinstance(agent, QualityAssuranceAgent) and hasattr(agent, 'last_review'):
                     reviewed_cases = agent.last_review
+            
+            # 如果从agent实例中没有获取到结果，尝试从持久化存储中读取
+            if not requirements:
+                requirements = agent_io.load_result("requirement_analyst")
+                logger.info("从持久化存储中加载需求分析结果")
+            
+            if not test_strategy:
+                test_strategy = agent_io.load_result("test_designer")
+                logger.info("从持久化存储中加载测试设计结果")
+            
+            if not test_cases:
+                test_cases = agent_io.load_result("test_case_writer")
+                logger.info("从持久化存储中加载测试用例结果")
+            
+            if not reviewed_cases:
+                reviewed_cases = agent_io.load_result("quality_assurance")
+                logger.info("从持久化存储中加载质量审查结果")
             
             # 如果没有获取到审查后的测试用例，使用测试用例
             if not reviewed_cases and test_cases:

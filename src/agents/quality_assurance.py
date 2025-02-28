@@ -4,6 +4,7 @@ import autogen
 from typing import Dict, List
 import logging
 from dotenv import load_dotenv
+from src.utils.agent_io import AgentIO
 load_dotenv()
 logger = logging.getLogger(__name__)
 
@@ -25,65 +26,47 @@ class QualityAssuranceAgent:
             }
         ]
         
+        # 初始化AgentIO用于保存和加载审查结果
+        self.agent_io = AgentIO()
+        
+        # 初始化agent
         self.agent = autogen.AssistantAgent(
             name="quality_assurance",
-            system_message='''你是一位严谨的质量保证专家。你的职责是审查和改进
-            测试用例，确保它们符合质量标准。
-
-            请按照以下 JSON 格式提供审查结果：
-            {
-                "reviewed_cases": [
-                    {
-                        "id": "TC001",
-                        "title": "测试用例标题",
-                        "preconditions": [
-                            "前置条件1",
-                            "前置条件2"
-                        ],
-                        "steps": [
-                            "测试步骤1",
-                            "测试步骤2"
-                        ],
-                        "expected_results": [
-                            "预期结果1",
-                            "预期结果2"
-                        ],
-                        "priority": "P0",
-                        "category": "功能测试",
-                        "boundary_conditions": [
-                            "边界条件1",
-                            "边界条件2"
-                        ],
-                        "error_scenarios": [
-                            "错误场景1",
-                            "错误场景2"
-                        ]
-                    }
-                ],
-                "review_comments": [
-                    {
-                        "case_id": "TC001",
-                        "completeness": ["完整性建议1", "完整性建议2"],
-                        "clarity": ["清晰度建议1", "清晰度建议2"],
-                        "executability": ["可执行性建议1", "可执行性建议2"],
-                        "boundary_cases": ["边界情况建议1", "边界情况建议2"],
-                        "error_scenarios": ["错误场景建议1", "错误场景建议2"]
-                    }
-                ]
-            }
-
-            注意：
-            1. 所有输出必须严格遵循上述 JSON 格式
-            2. 每个数组至少包含一个有效项
-            3. 所有文本必须使用双引号
-            4. JSON 必须是有效的且可解析的
-            5. 每个测试用例必须包含所有必需字段''',
+            system_message="""你是一位专业的质量保证工程师，负责审查和改进测试用例。
+            你的职责是确保测试用例的完整性、清晰度、可执行性，并关注边界情况和错误场景。
+            
+            在审查测试用例时，请重点关注以下方面：
+            1. 完整性：确保测试用例包含所有必要的字段和信息
+            2. 清晰度：确保测试步骤和预期结果描述清晰明确
+            3. 可执行性：确保测试用例可以被执行和验证
+            4. 边界情况：检查是否考虑了各种边界条件
+            5. 错误场景：验证是否包含了必要的错误处理场景
+            
+            请提供具体的改进建议，包括但不限于：
+            - 缺失字段的补充建议
+            - 不清晰描述的改进方案
+            - 可执行性的增强建议
+            - 边界条件的补充建议
+            - 错误场景的完善建议""",
             llm_config={"config_list": self.config_list}
         )
         
         # 添加last_review属性，用于跟踪最近的审查结果
         self.last_review = None
+        
+        # 尝试加载之前的审查结果
+        self._load_last_review()
 
+    def _load_last_review(self):
+        """加载之前保存的审查结果"""
+        try:
+            result = self.agent_io.load_result("quality_assurance")
+            if result:
+                self.last_review = result
+                logger.info("成功加载之前的质量审查结果")
+        except Exception as e:
+            logger.error(f"加载质量审查结果时出错: {str(e)}")
+    
     def review(self, test_cases: List[Dict]) -> List[Dict]:
         """审查和改进测试用例。"""
         try:
@@ -120,6 +103,9 @@ class QualityAssuranceAgent:
             # 保存审查结果到last_review属性
             self.last_review = reviewed_cases
             logger.info(f"测试用例审查完成，共审查 {len(reviewed_cases)} 个测试用例")
+            
+            # 将审查结果保存到文件
+            self.agent_io.save_result("quality_assurance", reviewed_cases)
             
             return reviewed_cases
 

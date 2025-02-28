@@ -8,6 +8,7 @@ import datetime
 from typing import Dict, List
 import logging
 from dotenv import load_dotenv
+from src.utils.agent_io import AgentIO
 from src.schemas.communication import TestScenario
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -29,6 +30,9 @@ class RequirementAnalystAgent:
                 "api_version": model_version
             }
         ]
+        
+        # 初始化AgentIO用于保存和加载分析结果
+        self.agent_io = AgentIO()
         
         self.agent = autogen.AssistantAgent(
             name="requirement_analyst",
@@ -443,6 +447,10 @@ class RequirementAnalystAgent:
                     "analysis_duration": f"{time.time() - start_time:.2f}s"
                 }
             }
+            
+            # 将分析结果保存到文件
+            self.agent_io.save_result("requirement_analyst", structured_result)
+            
             return structured_result
 
         except Exception as e:
