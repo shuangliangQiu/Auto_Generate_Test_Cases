@@ -128,6 +128,9 @@ class TestCaseWriterAgent:
                 测试用例的优先级必须使用测试优先级中定义的级别（如P0、P1等）。
                 测试用例的类别应该与测试覆盖矩阵中的测试类型相对应。
                 
+                重要：必须为测试覆盖矩阵中的每个功能点至少创建一个测试用例，确保100%覆盖所有功能点。
+                请至少生成16个测试用例，确保每个功能点都被覆盖到。
+                
                 对每个测试用例，请提供：
                 1. 用例ID
                 2. 标题
@@ -160,6 +163,9 @@ class TestCaseWriterAgent:
                 每个测试用例必须包含：ID、标题、前置条件、测试步骤、预期结果、优先级和类别。
                 优先级必须使用P0、P1等格式，类别必须与测试覆盖矩阵中的测试类型对应。
                 
+                重要：必须为测试覆盖矩阵中的每个功能点至少创建一个测试用例，确保100%覆盖所有功能点。
+                请至少生成16个测试用例，确保每个功能点都被覆盖到。
+                
                 请以JSON格式返回测试用例，确保格式正确。"""
                 
                 # 重新尝试生成测试用例
@@ -179,17 +185,41 @@ class TestCaseWriterAgent:
             
             # 验证测试用例是否与测试覆盖矩阵对应
             if coverage_matrix and test_cases:
-                coverage_features = {item.get('feature', '') for item in coverage_matrix if 'feature' in item}
-                test_case_categories = {tc.get('category', '') for tc in test_cases if 'category' in tc}
+                # 提取功能点和测试类型的映射关系
+                feature_type_map = {}
+                for item in coverage_matrix:
+                    feature = item.get('feature', '')
+                    test_type = item.get('test_type', '')
+                    if feature not in feature_type_map:
+                        feature_type_map[feature] = set()
+                    if isinstance(test_type, str):
+                        for t in test_type.split(','):
+                            feature_type_map[feature].add(t.strip())
+                    else:
+                        feature_type_map[feature].add(test_type)
+                
+                # 检查每个功能点是否被测试用例覆盖
+                covered_features = set()
+                for tc in test_cases:
+                    # 从测试用例标题中提取可能的功能点
+                    title = tc.get('title', '').lower()
+                    for feature in feature_type_map.keys():
+                        if feature.lower() in title:
+                            covered_features.add(feature)
                 
                 # 记录覆盖情况
-                logger.info(f"测试覆盖矩阵功能点: {coverage_features}")
-                logger.info(f"测试用例类别: {test_case_categories}")
+                logger.info(f"测试覆盖矩阵功能点总数: {len(feature_type_map)}")
+                logger.info(f"已覆盖功能点数量: {len(covered_features)}")
                 
                 # 检查是否有未覆盖的功能点
-                uncovered = coverage_features - test_case_categories
+                uncovered = set(feature_type_map.keys()) - covered_features
                 if uncovered:
                     logger.warning(f"以下功能点未被测试用例覆盖: {uncovered}")
+                    
+                    # 如果覆盖率低于80%，记录警告
+                    coverage_rate = len(covered_features) / len(feature_type_map) if feature_type_map else 1.0
+                    if coverage_rate < 0.8:
+                        logger.warning(f"测试用例覆盖率过低: {coverage_rate:.2%}，建议增加测试用例数量")
             
             # 保存测试用例到last_cases属性
             self.last_cases = test_cases
