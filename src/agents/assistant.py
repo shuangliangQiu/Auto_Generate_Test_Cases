@@ -10,6 +10,7 @@ from .test_designer import TestDesignerAgent
 from .test_case_writer import TestCaseWriterAgent
 from .quality_assurance import QualityAssuranceAgent
 from dotenv import load_dotenv
+from schemas.communication import TestCase
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -176,7 +177,8 @@ class AssistantAgent:
                 'requirement_analyst',
                 'test_designer',
                 {
-                    'requirements': analysis_result  # 直接传递需求分析结果
+                    'requirements': analysis_result,  # 传递需求分析结果
+                    'original_doc': task.get('description', '')  # 传递原始需求文档
                 }
             )
             
@@ -227,6 +229,25 @@ class AssistantAgent:
                 'quality_assurance',
                 {'test_cases': test_cases}
             )
+            
+            # 将审查结果传递给测试用例编写者进行改进
+            if review_result and isinstance(review_result, dict) and 'reviewed_cases' in review_result:
+                test_case_writer = next((agent for agent in self.agents if isinstance(agent, TestCaseWriterAgent)), None)
+                if test_case_writer:
+                    # 确保review_comments是有效的字典或字符串
+                    review_comments = review_result.get('review_comments', {})
+                    # 确保test_cases是List[Dict]类型
+                    if isinstance(test_cases, list):
+                        improved_cases = test_case_writer.improve_test_cases(test_cases, review_comments)
+                        if improved_cases:
+                            test_cases = improved_cases
+                            logger.info("测试用例已根据质量审查意见进行改进")
+                    else:
+                        logger.warning(f"test_cases不是列表类型: {type(test_cases)}，跳过改进")
+                else:
+                    logger.warning("找不到测试用例编写代理，无法改进测试用例")
+            else:
+                logger.warning("质量审查结果为空或格式不正确，跳过测试用例改进")
             
             # 监控进度
             self._monitor_progress()
@@ -318,6 +339,9 @@ class AssistantAgent:
             # 根据代理类型查找，而不是名称
             if to_agent == 'requirement_analyst':
                 target_agent = next((agent for agent in self.agents if isinstance(agent, RequirementAnalystAgent)), None)
+                if target_agent is None:
+                    logger.error("找不到需求分析代理")
+                    return None
                 # 验证请求消息格式
                 request = RequirementAnalysisRequest(**message)
                 logger.info("开始需求分析")
@@ -326,7 +350,7 @@ class AssistantAgent:
                 # 验证响应消息格式
                 # 确保结果转换为字典格式
                 validated_result = result if isinstance(result, dict) else {
-                    'functional_requirements': [],
+                    'functional_requirements': result if isinstance(result, list) else [],
                     'non_functional_requirements': [],
                     'test_scenarios': [],
                     'risk_areas': []
@@ -367,7 +391,14 @@ class AssistantAgent:
                         )
                     ]
                 
-                response = RequirementAnalysisResponse(**validated_result)
+                response_data = {
+                    "msg_type": "requirement_analysis_response",
+                    "functional_requirements": validated_result.get('functional_requirements', []),
+                    "non_functional_requirements": validated_result.get('non_functional_requirements', []),
+                    "test_scenarios": validated_result.get('test_scenarios', []),
+                    "risk_areas": validated_result.get('risk_areas', [])
+                }
+                response = RequirementAnalysisResponse(**response_data)
                 logger.info(f"需求分析完成，结果: {response.dict()}")
                 return response.dict()
                 
@@ -381,6 +412,13 @@ class AssistantAgent:
                     'original_doc': request.original_doc or '',
                     'analysis_result': request.requirements
                 }
+                # 检查target_agent是否为None且具有design方法
+                if target_agent is None:
+                    logger.error("测试设计代理为None")
+                    return None
+                if not hasattr(target_agent, 'design'):
+                    logger.error("测试设计代理没有design方法")
+                    return None
                 # 使用同步方式调用design
                 result = target_agent.design(complete_requirements)
                 
@@ -428,15 +466,18 @@ class AssistantAgent:
                 # 获取测试策略
                 # 确保我们能够正确获取测试策略，无论它是作为对象属性还是字典键值
                 test_strategy = None
-                if hasattr(request, 'test_strategy'):
+                if isinstance(request, dict):
+                    test_strategy = request.get('test_strategy')
+                elif hasattr(request, 'test_strategy'):
                     test_strategy = request.test_strategy
-                elif isinstance(message, dict) and 'test_strategy' in message:
-                    test_strategy = message['test_strategy']
-                    # 确保测试策略是一个有效的字典
-                    if not isinstance(test_strategy, dict):
-                        logger.warning(f"测试策略格式不正确: {type(test_strategy)}")
-                        test_strategy = {}
-                else:
+                elif isinstance(message, dict):
+                    test_strategy = message.get('test_strategy')
+                
+                # 确保测试策略是一个有效的字典
+                if not isinstance(test_strategy, dict):
+                    logger.warning(f"测试策略格式不正确: {type(test_strategy)}")
+                    test_strategy = {}
+                elif test_strategy is None:
                     logger.warning("无法从请求中获取测试策略")
                     test_strategy = {}
                 
@@ -446,18 +487,36 @@ class AssistantAgent:
                     # 返回None，表示测试策略无效，需要终止流程
                     return None
                 
+                # 检查target_agent是否为None且具有generate方法
+                if target_agent is None:
+                    logger.error("测试用例编写代理为None")
+                    return None
+                if not hasattr(target_agent, 'generate'):
+                    logger.error("测试用例编写代理没有generate方法")
+                    return None
+                
                 # 使用同步方式调用generate
                 try:
                     result = target_agent.generate(test_strategy)
                     
                     # 验证响应消息格式
-                    # 确保test_cases是一个列表
-                    if isinstance(result, dict) and 'test_cases' in result:
-                        test_cases = result['test_cases']
+                    # 确保test_cases是一个列表，并转换为TestCase对象列表
+                    if isinstance(result, dict):
+                        test_cases = result.get('test_cases', [])
                     else:
                         test_cases = result if isinstance(result, list) else []
                     
-                    response = TestCaseWriteResponse(**{'test_cases': test_cases})
+                    # 将字典列表转换为TestCase对象列表
+                    test_case_objects = []
+                    for case in test_cases:
+                        if isinstance(case, dict):
+                            # 确保字典包含必要的字段
+                            case['description'] = case.get('description', '')
+                            test_case_objects.append(TestCase(**case))
+                        elif isinstance(case, TestCase):
+                            test_case_objects.append(case)
+                    
+                    response = TestCaseWriteResponse(test_cases=test_case_objects)
                     logger.info(f"测试用例生成完成，结果: {response.dict()}")
                     return test_cases  # 直接返回test_cases列表，而不是整个响应字典
                 except Exception as e:
@@ -469,12 +528,23 @@ class AssistantAgent:
                 # 验证请求消息格式
                 request = QualityAssuranceRequest(**message)
                 logger.info("开始质量保证审查")
+                # 检查target_agent是否为None且具有review方法
+                if target_agent is None:
+                    logger.error("质量保证代理为None")
+                    return None
+                if not hasattr(target_agent, 'review'):
+                    logger.error("质量保证代理没有review方法")
+                    return None
                 # 使用同步方式调用review
                 result = target_agent.review(request.test_cases)
                 # 验证响应消息格式
                 response = QualityAssuranceResponse(**{
-                    'reviewed_cases': result,
-                    'review_comments': []
+                    'reviewed_cases': result.get('reviewed_cases', []),
+                    'review_comments': [
+                        comment
+                        for category in result.get('review_comments', {}).values()
+                        for comment in category
+                    ] if isinstance(result.get('review_comments'), dict) else result.get('review_comments', [])
                 })
                 logger.info(f"质量保证审查完成，结果: {response.dict()}")
                 return response.dict()

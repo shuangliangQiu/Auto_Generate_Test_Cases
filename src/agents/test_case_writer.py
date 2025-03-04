@@ -1,7 +1,8 @@
 # src/agents/test_case_writer.py
 import os
+import json
 import autogen
-from typing import Dict, List
+from typing import Dict, List, Union
 import logging
 from dotenv import load_dotenv
 from src.utils.agent_io import AgentIO
@@ -226,7 +227,8 @@ class TestCaseWriterAgent:
             logger.info(f"测试用例生成完成，共生成 {len(test_cases)} 个测试用例")
             
             # 将测试用例保存到文件
-            self.agent_io.save_result("test_case_writer", test_cases)
+            # 将测试用例列表转换为字典格式再保存
+            self.agent_io.save_result("test_case_writer", {"test_cases": test_cases})
             
             return test_cases
 
@@ -325,18 +327,86 @@ class TestCaseWriterAgent:
                 
                 # 识别当前正在处理的字段
                 elif line.lower().startswith('title:'):
-                    current_test_case['title'] = line.split(':', 1)[1].strip()
+                    # 如果遇到标题字段但当前测试用例为空，先创建一个新的测试用例
+                    if not current_test_case:
+                        current_test_case = {
+                            'id': f'TC{len(test_cases)+1:03d}',  # 自动生成ID
+                            'title': '',
+                            'preconditions': [],
+                            'steps': [],
+                            'expected_results': [],
+                            'priority': '',
+                            'category': ''
+                        }
+                    # 增加空值检查,避免split返回None
+                    title_parts = line.split(':', 1) if line else ['', '']
+                    current_test_case['title'] = title_parts[1].strip() if len(title_parts) > 1 else ''
                     current_field = 'title'
                 elif line.lower().startswith('preconditions:'):
+                    # 如果遇到前置条件字段但当前测试用例为空，先创建一个新的测试用例
+                    if not current_test_case:
+                        current_test_case = {
+                            'id': f'TC{len(test_cases)+1:03d}',  # 自动生成ID
+                            'title': '',
+                            'preconditions': [],
+                            'steps': [],
+                            'expected_results': [],
+                            'priority': '',
+                            'category': ''
+                        }
                     current_field = 'preconditions'
                 elif line.lower().startswith('steps:'):
+                    # 如果遇到步骤字段但当前测试用例为空，先创建一个新的测试用例
+                    if not current_test_case:
+                        current_test_case = {
+                            'id': f'TC{len(test_cases)+1:03d}',  # 自动生成ID
+                            'title': '',
+                            'preconditions': [],
+                            'steps': [],
+                            'expected_results': [],
+                            'priority': '',
+                            'category': ''
+                        }
                     current_field = 'steps'
                 elif line.lower().startswith('expected results:'):
+                    # 如果遇到预期结果字段但当前测试用例为空，先创建一个新的测试用例
+                    if not current_test_case:
+                        current_test_case = {
+                            'id': f'TC{len(test_cases)+1:03d}',  # 自动生成ID
+                            'title': '',
+                            'preconditions': [],
+                            'steps': [],
+                            'expected_results': [],
+                            'priority': '',
+                            'category': ''
+                        }
                     current_field = 'expected_results'
                 elif line.lower().startswith('priority:'):
+                    # 如果遇到优先级字段但当前测试用例为空，先创建一个新的测试用例
+                    if not current_test_case:
+                        current_test_case = {
+                            'id': f'TC{len(test_cases)+1:03d}',  # 自动生成ID
+                            'title': '',
+                            'preconditions': [],
+                            'steps': [],
+                            'expected_results': [],
+                            'priority': '',
+                            'category': ''
+                        }
                     current_test_case['priority'] = line.split(':', 1)[1].strip()
                     current_field = 'priority'
                 elif line.lower().startswith('category:'):
+                    # 如果遇到类别字段但当前测试用例为空，先创建一个新的测试用例
+                    if not current_test_case:
+                        current_test_case = {
+                            'id': f'TC{len(test_cases)+1:03d}',  # 自动生成ID
+                            'title': '',
+                            'preconditions': [],
+                            'steps': [],
+                            'expected_results': [],
+                            'priority': '',
+                            'category': ''
+                        }
                     current_test_case['category'] = line.split(':', 1)[1].strip()
                     current_field = 'category'
                 
@@ -417,3 +487,227 @@ class TestCaseWriterAgent:
         except Exception as e:
             logger.error(f"验证测试用例错误: {str(e)}")
             return False
+
+    def _parse_string_feedback(self, feedback: str) -> Dict:
+        """从字符串格式的反馈中提取结构化的审查评论。"""
+        review_comments = {
+            "completeness": [],
+            "clarity": [],
+            "executability": [],
+            "boundary_cases": [],
+            "error_scenarios": []
+        }
+        
+        if not feedback:
+            return review_comments
+            
+        # 解析反馈内容
+        feedback_sections = [line.strip() for line in feedback.split('\n') if line.strip()]
+        current_section = None
+        
+        # 提取各个方面的改进建议
+        for line in feedback_sections:
+            # 识别章节标题
+            section_mapping = {
+                '1. 完整性': 'completeness',
+                '2. 清晰度': 'clarity',
+                '3. 可执行性': 'executability',
+                '4. 边界情况': 'boundary_cases',
+                '5. 错误场景': 'error_scenarios'
+            }
+            
+            for title, section in section_mapping.items():
+                if title in line:
+                    current_section = section
+                    break
+            
+            # 提取建议内容
+            if current_section and (line.startswith('-') or line.startswith('•')):
+                content = line[1:].strip()
+                if content:  # 确保内容不为空
+                    review_comments[current_section].append(content)
+        
+        return review_comments
+
+    def improve_test_cases(self, test_cases: List[Dict], qa_feedback: Union[str, Dict]) -> List[Dict]:
+        """根据质量保证团队的反馈改进测试用例。
+        使用大模型来根据反馈改进测试用例，而不是硬编码的逻辑。
+        """
+        try:
+            # 参数验证
+            if not test_cases or not isinstance(test_cases, list):
+                logger.warning("无效的测试用例输入")
+                return test_cases
+                
+            # 处理qa_feedback，确保review_comments是字典类型
+            if isinstance(qa_feedback, str):
+                review_comments = self._parse_string_feedback(qa_feedback)
+                feedback_str = qa_feedback
+            elif isinstance(qa_feedback, dict):
+                review_comments = qa_feedback.get('review_comments', {})
+                # 将字典转换为字符串
+                feedback_str = json.dumps(qa_feedback, ensure_ascii=False, indent=2)
+            elif isinstance(qa_feedback, list):
+                # 如果是列表，直接使用
+                review_comments = qa_feedback
+                feedback_str = '\n'.join(qa_feedback) if all(isinstance(item, str) for item in qa_feedback) else json.dumps(qa_feedback, ensure_ascii=False, indent=2)
+            else:
+                logger.warning("无效的反馈格式")
+                return test_cases
+            
+            if not review_comments and not feedback_str:
+                logger.warning("未找到有效的反馈内容")
+                return test_cases
+            
+            # 使用大模型改进测试用例
+            logger.info("使用大模型改进测试用例")
+            improved_cases = self._improve_with_llm(test_cases, feedback_str)
+            
+            # 如果大模型改进失败，返回原始测试用例
+            if not improved_cases:
+                logger.warning("大模型改进测试用例失败，返回原始测试用例")
+                return test_cases
+            
+            # 保存改进后的测试用例
+            self.last_cases = improved_cases
+            self.agent_io.save_result("test_case_writer", {"test_cases": improved_cases})
+            
+            return improved_cases
+
+        except Exception as e:
+            logger.error(f"改进测试用例错误: {str(e)}")
+            return test_cases
+            
+    def _improve_with_llm(self, test_cases: List[Dict], feedback: str) -> List[Dict]:
+        """使用大模型改进测试用例。"""
+        try:
+            # 创建用户代理
+            user_proxy = autogen.UserProxyAgent(
+                name="user_proxy",
+                system_message="测试用例和反馈提供者",
+                human_input_mode="NEVER",
+                code_execution_config={"use_docker": False}
+            )
+            
+            # 将测试用例转换为JSON字符串
+            test_cases_json = json.dumps({"test_cases": test_cases}, ensure_ascii=False, indent=2)
+            
+            # 构建提示信息
+            prompt = f"""请根据以下质量审查反馈，改进测试用例：
+            
+            原始测试用例：
+            {test_cases_json}
+            
+            质量审查反馈：
+            {feedback}
+            
+            请根据反馈改进每个测试用例，确保：
+            1. 完整性 - 所有必要字段都存在且有意义
+            2. 清晰度 - 标题、步骤和预期结果描述清晰
+            3. 可执行性 - 每个步骤都有对应的预期结果
+            4. 边界情况 - 考虑边界条件
+            5. 错误场景 - 考虑可能的错误情况
+            
+            请返回改进后的测试用例，格式必须与原始测试用例相同，保持JSON结构不变。
+            必须包含所有原始测试用例的字段，并可以添加新的字段如'boundary_conditions'和'error_scenarios'。
+            
+            请直接返回完整的JSON格式测试用例，不要添加任何额外的解释。"""
+            
+            # 调用大模型改进测试用例
+            user_proxy.initiate_chat(
+                self.agent,
+                message=prompt,
+                max_turns=1  # 限制对话轮次为1，避免死循环
+            )
+            
+            # 获取大模型的响应
+            response = self.agent.last_message()
+            print(response)
+            
+            # 解析响应
+            improved_cases = self._parse_llm_response(response)
+            
+            # 验证改进后的测试用例
+            if not improved_cases:
+                logger.warning("大模型未返回有效的测试用例")
+                return []
+                
+            # 确保改进后的测试用例包含所有必要字段
+            validated_cases = []
+            for case in improved_cases:
+                if self._validate_test_case(case):
+                    validated_cases.append(case)
+                else:
+                    logger.warning(f"改进后的测试用例验证失败: {case.get('id', 'unknown')}")
+            
+            if not validated_cases:
+                logger.warning("所有改进后的测试用例验证失败")
+                return []
+                
+            logger.info(f"成功使用大模型改进 {len(validated_cases)} 个测试用例")
+            return validated_cases
+            
+        except Exception as e:
+            logger.error(f"使用大模型改进测试用例错误: {str(e)}")
+            return []
+    
+    def _parse_llm_response(self, response) -> List[Dict]:
+        """解析大模型的响应，提取改进后的测试用例。"""
+        try:
+            # 检查response类型
+            if isinstance(response, dict):
+                # 如果是字典，尝试从content字段获取内容
+                if 'content' in response:
+                    response = response['content']
+                else:
+                    logger.error(f"无法从字典中提取响应内容: {response}")
+                    return []
+            
+            # 确保response是字符串
+            if not isinstance(response, str):
+                logger.error(f"响应不是字符串类型: {type(response)}")
+                return []
+            
+            # 尝试提取JSON部分
+            import json
+            import re
+            
+            # 尝试提取JSON部分
+            json_match = re.search(r'```json\s*(.*?)\s*```', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+                try:
+                    json_data = json.loads(json_str)
+                    if 'test_cases' in json_data and isinstance(json_data['test_cases'], list):
+                        return json_data['test_cases']
+                except json.JSONDecodeError as e:
+                    logger.error(f"JSON解析错误: {str(e)}")
+            
+            # 如果没有找到JSON代码块，尝试直接解析整个响应
+            try:
+                json_data = json.loads(response)
+                if 'test_cases' in json_data and isinstance(json_data['test_cases'], list):
+                    return json_data['test_cases']
+                elif isinstance(json_data, list):
+                    # 如果直接返回了测试用例列表
+                    return json_data
+            except json.JSONDecodeError:
+                # 如果直接解析失败，尝试在整个文本中查找JSON对象
+                json_obj_match = re.search(r'\{[\s\S]*\}', response)
+                if json_obj_match:
+                    try:
+                        json_str = json_obj_match.group(0)
+                        json_data = json.loads(json_str)
+                        if 'test_cases' in json_data and isinstance(json_data['test_cases'], list):
+                            return json_data['test_cases']
+                        elif isinstance(json_data, list):
+                            return json_data
+                    except json.JSONDecodeError:
+                        pass
+            
+            logger.warning("无法从响应中提取有效的测试用例")
+            return []
+            
+        except Exception as e:
+            logger.error(f"解析大模型响应错误: {str(e)}")
+            return []

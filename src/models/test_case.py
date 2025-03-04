@@ -1,6 +1,6 @@
 # src/models/test_case.py
 import datetime
-from typing import List
+from typing import List,Dict,Any,Optional
 from dataclasses import dataclass
 import uuid
 
@@ -15,6 +15,7 @@ class TestCase:
     expected_results: List[str]
     priority: str
     category: str
+    test_data: Optional[Dict[str, Any]] = None
     
     def __post_init__(self):
         # 验证输入参数
@@ -32,6 +33,8 @@ class TestCase:
             raise ValueError("优先级必须是'高'、'中'、'低'之一")
         if not isinstance(self.category, str) or not self.category.strip():
             raise ValueError("类别不能为空且必须是字符串类型")
+        if self.test_data is not None and not isinstance(self.test_data, dict):
+            raise ValueError("测试数据必须是字典类型")
             
         # 初始化其他属性
         self.id = str(uuid.uuid4())

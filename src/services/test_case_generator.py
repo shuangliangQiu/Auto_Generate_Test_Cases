@@ -11,8 +11,10 @@ class TestCaseGenerator:
 
     def _load_template(self) -> Dict:
         """加载测试用例模板配置"""
+        if self.template_path is None:
+            return {}
         try:
-            with open(self.template_path, 'r', encoding='utf-8') as f:
+            with open(file=self.template_path, mode='r', encoding='utf-8') as f:
                 return json.load(f)
         except FileNotFoundError:
             return {}

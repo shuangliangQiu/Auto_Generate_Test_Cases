@@ -119,6 +119,13 @@ class AITestingSystem:
             
             # Export test cases
             if output_path and reviewed_cases:
+                # 确保reviewed_cases是列表类型
+                if isinstance(reviewed_cases, dict):
+                    reviewed_cases = [reviewed_cases]
+                elif not isinstance(reviewed_cases, list):
+                    logger.error("测试用例格式错误：必须是字典或字典列表")
+                    return {'status': 'error', 'message': '测试用例格式错误'}
+                
                 # 如果template_path是路径，则从文件加载模板
                 if isinstance(template_path, str):
                     try:
@@ -129,8 +136,8 @@ class AITestingSystem:
                         logger.error(f"Error loading template: {str(e)}")
                         # 使用默认模板
                         template = Template(
-                            name="Default Template",
-                            description="Default test case template"
+                            "Default Template",
+                            "Default test case template"
                         )
                 else:
                     # 假设template_path已经是Template对象
