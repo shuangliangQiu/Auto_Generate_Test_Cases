@@ -118,28 +118,15 @@ class QualityAssuranceAgent:
                 logger.warning(f"审查反馈格式不正确: {type(review_feedback)}，转换为字符串")
                 review_feedback = str(review_feedback)
             
-            # 查找测试用例编写者代理
-            from src.agents.test_case_writer import TestCaseWriterAgent
-            test_case_writer = TestCaseWriterAgent()
-            
-            # 将反馈发送给测试用例编写者进行改进
-            reviewed_cases = test_case_writer.improve_test_cases(test_cases, review_feedback)
-            
-            # 如果审查结果为空，返回原始测试用例
-            if not reviewed_cases:
-                logger.warning("测试用例审查结果为空，使用原始测试用例")
-                reviewed_cases = test_cases
-            
-            # 保存审查结果到last_review属性
-            self.last_review = reviewed_cases
-            logger.info(f"测试用例审查完成，共审查 {len(reviewed_cases)} 个测试用例")
+            # 移除直接调用TestCaseWriterAgent的部分，只返回审查结果
+            # 让AssistantAgent负责协调改进流程
             
             # 提取反馈中的关键改进建议
             review_comments = self._extract_review_comments(review_feedback)
             
-            # 创建包含审查反馈和改进后测试用例的结果
+            # 创建包含审查反馈和原始测试用例的结果
             result = {
-                "reviewed_cases": reviewed_cases,
+                "reviewed_cases": test_cases,  # 返回原始测试用例，由AssistantAgent负责改进
                 "review_comments": review_comments,
                 "review_date": self._get_current_timestamp(),
                 "review_status": "completed"
@@ -157,6 +144,10 @@ class QualityAssuranceAgent:
             except Exception as e:
                 logger.error(f"保存质量审查结果时出错: {str(e)}")
                 # 即使保存失败，仍然返回结果
+            
+            # 保存审查结果到last_review属性
+            self.last_review = test_cases
+            logger.info(f"测试用例审查完成，共审查 {len(test_cases)} 个测试用例")
             
             return result
 
