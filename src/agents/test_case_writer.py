@@ -10,20 +10,41 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # 使用 Azure OpenAI 配置
-api_key = os.getenv("AZURE_OPENAI_API_KEY")
-base_url = os.getenv("AZURE_OPENAI_BASE_URL")
-model = os.getenv("AZURE_OPENAI_MODEL")
-model_version = os.getenv("AZURE_OPENAI_MODEL_VERSION")
+gpt_api_key = os.getenv("AZURE_OPENAI_API_KEY")
+gpt_base_url = os.getenv("AZURE_OPENAI_BASE_URL")
+gpt_model = os.getenv("AZURE_OPENAI_MODEL")
+gpt_model_version = os.getenv("AZURE_OPENAI_MODEL_VERSION")
+#DS
+ds_api_key = os.getenv("DS_API_KEY")
+ds_base_url = os.getenv("DS_BASE_URL")
+ds_model_v3 = os.getenv("DS_MODEL_V3")
+ds_model_r1 = os.getenv("DS_MODEL_R1")
 
 class TestCaseWriterAgent:
     def __init__(self):
-        self.config_list = [
+        self.config_list_gpt = [
             {
-                "model": model,
-                "api_key": api_key,
-                "base_url": base_url,
+                "model": gpt_model,
+                "api_key": gpt_api_key,
+                "base_url": gpt_base_url,
                 "api_type": "azure",
-                "api_version": model_version
+                "api_version": gpt_model_version
+            }
+        ]
+
+        self.config_list_ds_v3 = [
+            {
+                "model": ds_model_v3,
+                "api_key": ds_api_key,
+                "base_url": ds_base_url,
+            }
+        ]
+
+        self.config_list_ds_r1 = [
+            {
+                "model": ds_model_r1,
+                "api_key": ds_api_key,
+                "base_url": ds_base_url,
             }
         ]
         
@@ -54,7 +75,7 @@ class TestCaseWriterAgent:
                             "预期结果2"
                         ],
                         "priority": "P0",
-                        "category": "功能测试"
+                        "category": "功能测试" # 也可以是其他测试类型或几个类型
                     }
                 ]
             }
@@ -65,7 +86,7 @@ class TestCaseWriterAgent:
             3. 所有文本必须使用双引号
             4. JSON 必须是有效的且可解析的
             5. 每个测试用例必须包含所有必需字段''',
-            llm_config={"config_list": self.config_list}
+            llm_config={"config_list": self.config_list_ds_v3}
         )
         
         # 添加last_cases属性，用于跟踪最近生成的测试用例
@@ -129,8 +150,9 @@ class TestCaseWriterAgent:
                 测试用例的优先级必须使用测试优先级中定义的级别（如P0、P1等）。
                 测试用例的类别应该与测试覆盖矩阵中的测试类型相对应。
                 
-                重要：必须为测试覆盖矩阵中的每个功能点至少创建一个测试用例，确保100%覆盖所有功能点。
-                请至少生成16个测试用例，确保每个功能点都被覆盖到。
+                重要：
+                + 必须为测试覆盖矩阵中的每个功能点至少创建一个测试用例，确保100%覆盖所有功能点。
+                + 不仅要覆盖功能测试，非功能测试、风险点等，也要确保100%覆盖。
                 
                 对每个测试用例，请提供：
                 1. 用例ID
@@ -146,7 +168,12 @@ class TestCaseWriterAgent:
             )
 
             # 尝试解析测试用例
-            test_cases = self._parse_test_cases(self.agent.last_message())
+            last_message = self.agent.last_message()
+            if not last_message:
+                logger.warning("未能获取到agent的最后一条消息")
+                return []
+                
+            test_cases = self._parse_test_cases(last_message)
             
             # 如果解析结果为空，尝试重新生成一次
             if not test_cases:
@@ -155,7 +182,7 @@ class TestCaseWriterAgent:
                 # 构建更明确的提示，强调必须基于测试覆盖矩阵和优先级
                 retry_message = f"""请重新创建测试用例，确保严格按照测试设计生成。
                 
-                测试覆盖矩阵中的每个功能点都必须有对应的测试用例：
+                测试覆盖矩阵中的每个测试点都必须有对应的测试用例：
                 {coverage_info}
                 
                 测试用例必须使用以下优先级：
@@ -164,8 +191,9 @@ class TestCaseWriterAgent:
                 每个测试用例必须包含：ID、标题、前置条件、测试步骤、预期结果、优先级和类别。
                 优先级必须使用P0、P1等格式，类别必须与测试覆盖矩阵中的测试类型对应。
                 
-                重要：必须为测试覆盖矩阵中的每个功能点至少创建一个测试用例，确保100%覆盖所有功能点。
-                请至少生成16个测试用例，确保每个功能点都被覆盖到。
+                重要：
+                + 必须为测试覆盖矩阵中的每个功能点至少创建一个测试用例，确保100%覆盖所有功能点。
+                + 不仅要覆盖功能测试，非功能测试、风险点等，也要确保100%覆盖。
                 
                 请以JSON格式返回测试用例，确保格式正确。"""
                 
@@ -177,7 +205,12 @@ class TestCaseWriterAgent:
                 )
                 
                 # 再次解析测试用例
-                test_cases = self._parse_test_cases(self.agent.last_message())
+                last_message = self.agent.last_message()
+                if not last_message:
+                    logger.warning("重试时未能获取到agent的最后一条消息")
+                    return []
+                    
+                test_cases = self._parse_test_cases(last_message)
                 
                 # 如果仍然为空，记录错误并返回空列表
                 if not test_cases:
@@ -209,13 +242,13 @@ class TestCaseWriterAgent:
                             covered_features.add(feature)
                 
                 # 记录覆盖情况
-                logger.info(f"测试覆盖矩阵功能点总数: {len(feature_type_map)}")
-                logger.info(f"已覆盖功能点数量: {len(covered_features)}")
+                logger.info(f"测试覆盖矩阵测试点总数: {len(feature_type_map)}")
+                logger.info(f"已覆盖测试点数量: {len(covered_features)}")
                 
                 # 检查是否有未覆盖的功能点
                 uncovered = set(feature_type_map.keys()) - covered_features
                 if uncovered:
-                    logger.warning(f"以下功能点未被测试用例覆盖: {uncovered}")
+                    logger.warning(f"以下测试点未被测试用例覆盖: {uncovered}")
                     
                     # 如果覆盖率低于80%，记录警告
                     coverage_rate = len(covered_features) / len(feature_type_map) if feature_type_map else 1.0
@@ -593,7 +626,7 @@ class TestCaseWriterAgent:
             test_cases_json = json.dumps({"test_cases": test_cases}, ensure_ascii=False, indent=2)
             
             # 构建提示信息
-            prompt = f"""请根据以下质量审查反馈，改进和补充测试用例：
+            prompt = f"""请根据以下质量审查反馈，改进已有用例、补充缺失测试用例：
             
             原始测试用例：
             {test_cases_json}
@@ -607,6 +640,7 @@ class TestCaseWriterAgent:
             3. 可执行性 - 每个步骤都有对应的预期结果
             4. 边界情况 - 考虑边界条件
             5. 错误场景 - 考虑可能的错误情况
+            6. 出现用例未覆盖的场景和未考虑到的边界条件，务必添加新的测试用例
             
             要求：
             1. 保留并改进所有原始测试用例
@@ -616,8 +650,6 @@ class TestCaseWriterAgent:
             
             请返回完整的测试用例列表，包含改进后的原有用例和新增的用例。
             返回格式必须是JSON，保持与原始测试用例相同的结构。
-            每个测试用例必须包含所有原始字段，并可以添加新的字段如'boundary_conditions'和'error_scenarios'。
-            
             请直接返回完整的JSON格式测试用例，不要添加任何额外的解释。"""
             
             # 调用大模型改进测试用例
@@ -628,9 +660,19 @@ class TestCaseWriterAgent:
             )
             
             # 获取大模型的响应
-            response = self.agent.last_message()
-            print(response)
+            response = None
+            msg_list = user_proxy.chat_messages[self.agent]
+            print(f'debug:{type(msg_list)}')
+            response = msg_list[-1]['content']
+
+            # 检查响应是否为空
+            if not response:
+                logger.warning("未能获取到test_case_writer的响应")
+                return []
             
+            logger.debug(f"获取到的响应内容: {response[:100]}...")  # 只记录前100个字符避免日志过长
+            
+            #-----------
             # 解析响应
             improved_cases = self._parse_llm_response(response)
             

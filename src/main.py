@@ -100,29 +100,27 @@ class AITestingSystem:
                 test_strategy = agent_io.load_result("test_designer")
                 logger.info("从持久化存储中加载测试设计结果")
             
-            if not test_cases:
-                test_cases = agent_io.load_result("test_case_writer")
-                logger.info("从持久化存储中加载测试用例结果")
+            # 从test_case_writer的持久化存储中加载最终的测试用例
+            test_cases_data = agent_io.load_result("test_case_writer")
+            logger.info("从test_case_writer的持久化存储中加载最终的测试用例")
             
-            if not reviewed_cases:
-                reviewed_cases = agent_io.load_result("quality_assurance")
-                logger.info("从持久化存储中加载质量审查结果")
+            # 确保正确提取test_cases字段
+            if isinstance(test_cases_data, dict) and 'test_cases' in test_cases_data:
+                test_cases = test_cases_data['test_cases']
+            else:
+                test_cases = test_cases_data
             
-            # 如果没有获取到审查后的测试用例，使用测试用例
-            if not reviewed_cases and test_cases:
-                reviewed_cases = test_cases
-                
             # 如果没有获取到任何测试用例，返回错误
-            if not reviewed_cases:
+            if not test_cases:
                 logger.error("没有生成任何测试用例")
                 return {'status': 'error', 'message': '没有生成任何测试用例'}
             
             # Export test cases
-            if output_path and reviewed_cases:
-                # 确保reviewed_cases是列表类型
-                if isinstance(reviewed_cases, dict):
-                    reviewed_cases = [reviewed_cases]
-                elif not isinstance(reviewed_cases, list):
+            if output_path and test_cases:
+                # 确保test_cases是列表类型
+                if isinstance(test_cases, dict):
+                    test_cases = [test_cases]
+                elif not isinstance(test_cases, list):
                     logger.error("测试用例格式错误：必须是字典或字典列表")
                     return {'status': 'error', 'message': '测试用例格式错误'}
                 
@@ -144,7 +142,7 @@ class AITestingSystem:
                     template = template_path
                 
                 await self.export_service.export_to_excel(
-                    reviewed_cases,
+                    test_cases,
                     template,
                     output_path
                 )
@@ -154,7 +152,7 @@ class AITestingSystem:
                 "status": "success",
                 "requirements": requirements,
                 "test_strategy": test_strategy,
-                "test_cases": reviewed_cases,
+                "test_cases": test_cases,
                 "workflow_result": result
             }
             

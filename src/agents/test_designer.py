@@ -10,20 +10,41 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # 使用 Azure OpenAI 配置
-api_key = os.getenv("AZURE_OPENAI_API_KEY")
-base_url = os.getenv("AZURE_OPENAI_BASE_URL")
-model = os.getenv("AZURE_OPENAI_MODEL")
-model_version = os.getenv("AZURE_OPENAI_MODEL_VERSION")
+gpt_api_key = os.getenv("AZURE_OPENAI_API_KEY")
+gpt_base_url = os.getenv("AZURE_OPENAI_BASE_URL")
+gpt_model = os.getenv("AZURE_OPENAI_MODEL")
+gpt_model_version = os.getenv("AZURE_OPENAI_MODEL_VERSION")
+#DS
+ds_api_key = os.getenv("DS_API_KEY")
+ds_base_url = os.getenv("DS_BASE_URL")
+ds_model_v3 = os.getenv("DS_MODEL_V3")
+ds_model_r1 = os.getenv("DS_MODEL_R1")
 
 class TestDesignerAgent:
     def __init__(self):
-        self.config_list = [
+        self.config_list_gpt = [
             {
-                "model": model,
-                "api_key": api_key,
-                "base_url": base_url,
+                "model": gpt_model,
+                "api_key": gpt_api_key,
+                "base_url": gpt_base_url,
                 "api_type": "azure",
-                "api_version": model_version
+                "api_version": gpt_model_version
+            }
+        ]
+
+        self.config_list_ds_v3 = [
+            {
+                "model": ds_model_v3,
+                "api_key": ds_api_key,
+                "base_url": ds_base_url,
+            }
+        ]
+
+        self.config_list_ds_r1 = [
+            {
+                "model": ds_model_r1,
+                "api_key": ds_api_key,
+                "base_url": ds_base_url,
             }
         ]
         
@@ -93,7 +114,7 @@ class TestDesignerAgent:
 2. 每个数组至少包含一个有效项
 3. 所有文本必须使用双引号
 4. JSON 必须是有效的且可解析的''',
-            llm_config={"config_list": self.config_list}
+            llm_config={"config_list": self.config_list_ds_v3}
         )
         
         # 添加last_design属性，用于跟踪最近的设计结果

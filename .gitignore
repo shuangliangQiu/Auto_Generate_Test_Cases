@@ -3,3 +3,4 @@ docs/简本溯源-资质证照一键整理.pdf
 logs/ai_tester.log
 .~test_cases.xlsx
 *.env
+.gitignore
