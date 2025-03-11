@@ -1,6 +1,7 @@
 # Core dependencies
 python-dotenv>=1.0.0
-autogen>=1.0.0
+autogen
+openai>=1.0.0  # 添加 OpenAI 依赖
 asyncio>=3.4.3
 pydantic>=2.4.2
 fastapi>=0.104.0

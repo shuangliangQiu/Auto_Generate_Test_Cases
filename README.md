@@ -76,25 +76,46 @@ python src/main.py -d docs/接口文档.md -t api -o 接口测试用例.xlsx
 ## 项目结构
 
 ```
-src/
-├── agents/                 # AutoGen框架的AI智能体
-│   ├── requirement_analyst.py  # 需求分析智能体
-│   ├── test_designer.py       # 测试设计智能体
-│   ├── test_case_writer.py    # 测试用例编写智能体
-│   ├── quality_assurance.py   # 质量保证智能体
-│   └── assistant.py           # 助手智能体
-├── services/               # 核心服务
-│   ├── document_processor.py   # 文档处理服务
-│   ├── test_case_generator.py # 测试用例生成服务
-│   └── export_service.py      # 导出服务
-├── models/                 # 数据模型
-│   ├── test_case.py          # 测试用例模型
-│   └── template.py           # 模板模型
-├── utils/                  # 工具类
-│   ├── logger.py             # 日志工具
-│   ├── config.py             # 配置工具
-│   └── cli_parser.py         # 命令行参数解析工具
-└── main.py                # 应用程序入口
+/
+├── .cache/                # 缓存目录
+├── .env                   # 环境变量配置文件
+├── agent_results/         # 代理执行结果存储目录
+│   ├── quality_assurance_result.json    # 质量保证代理结果
+│   ├── requirement_analyst_result.json  # 需求分析代理结果
+│   ├── test_case_writer_result.json     # 测试用例编写代理结果
+│   └── test_designer_result.json        # 测试设计代理结果
+├── config.json            # 全局配置文件
+├── docs/                  # 文档目录
+│   ├── prd.md                # 产品需求文档
+│   ├── system_design.json    # 系统设计文档
+│   └── 需求文档示例.pdf       # 示例需求文档
+├── logs/                  # 日志目录
+├── requirements.txt       # 项目依赖
+├── src/                   # 源代码目录
+│   ├── agents/                 # AutoGen框架的AI智能体
+│   │   ├── requirement_analyst.py  # 需求分析智能体
+│   │   ├── test_designer.py       # 测试设计智能体
+│   │   ├── test_case_writer.py    # 测试用例编写智能体
+│   │   ├── quality_assurance.py   # 质量保证智能体
+│   │   └── assistant.py           # 助手智能体
+│   ├── services/               # 核心服务
+│   │   ├── document_processor.py   # 文档处理服务
+│   │   ├── test_case_generator.py # 测试用例生成服务
+│   │   └── export_service.py      # 导出服务
+│   ├── models/                 # 数据模型
+│   │   ├── test_case.py          # 测试用例模型
+│   │   └── template.py           # 模板模型
+│   ├── schemas/                # 数据结构模式
+│   │   └── communication.py      # 通信数据结构
+│   ├── templates/              # 测试用例模板
+│   │   ├── api_test_template.json     # API测试模板
+│   │   └── functional_test_template.json  # 功能测试模板
+│   ├── utils/                  # 工具类
+│   │   ├── logger.py             # 日志工具
+│   │   ├── cli_parser.py         # 命令行参数解析工具
+│   │   └── agent_io.py           # 代理IO工具
+│   └── main.py                # 应用程序入口
+└── template_config.json    # 模板配置文件
 ```
 
 ## 配置说明

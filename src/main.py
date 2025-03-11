@@ -19,13 +19,13 @@ from services.document_processor import DocumentProcessor
 from services.test_case_generator import TestCaseGenerator
 from services.export_service import ExportService
 from utils.logger import setup_logger
-from utils.config import load_config
+# from utils.config import load_config
 
 logger = logging.getLogger(__name__)
 
 class AITestingSystem:
     def __init__(self):
-        self.config = load_config()
+        # self.config = load_config()
         setup_logger()
         
         # Initialize services
