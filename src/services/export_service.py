@@ -46,9 +46,16 @@ class ExportService:
     
     def _validate_output_path(self, path: Path):
         """验证输出路径的有效性"""
+        # 确保路径有扩展名，如果没有则添加默认的.xlsx扩展名
+        if not path.suffix:
+            path = Path(str(path) + '.xlsx')
+            logger.info(f"添加默认扩展名.xlsx到输出路径: {path}")
+        
         # 检查文件格式
         if path.suffix not in self.supported_formats:
-            raise ValueError(f"Unsupported export format: {path.suffix}")
+            logger.warning(f"不支持的导出格式: {path.suffix}，将使用.xlsx格式")
+            # 替换不支持的扩展名为.xlsx
+            path = Path(str(path.with_suffix('')) + '.xlsx')
         
         # 检查目录是否存在
         if not path.parent.exists():
@@ -152,7 +159,7 @@ class ExportService:
         
         return df
     
-    def _save_to_excel(self, df: pd.DataFrame, path: Path, template: Template = None):
+    def _save_to_excel(self, df: pd.DataFrame, path: Path, template: Template | None = None):
         """Save DataFrame to Excel with formatting."""
         with pd.ExcelWriter(path, engine='openpyxl') as writer:
             df.to_excel(writer, index=False, sheet_name='Test Cases')

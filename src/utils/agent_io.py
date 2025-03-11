@@ -35,8 +35,16 @@ class AgentIO:
         """
         file_path = os.path.join(self.output_dir, f"{agent_name}_result.json")
         try:
+            # 处理Pydantic模型对象的序列化
+            def pydantic_encoder(obj):
+                if hasattr(obj, 'dict') and callable(getattr(obj, 'dict')):
+                    return obj.dict()
+                if hasattr(obj, 'model_dump') and callable(getattr(obj, 'model_dump')):
+                    return obj.model_dump()
+                raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+            
             with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(result, f, ensure_ascii=False, indent=2)
+                json.dump(result, f, ensure_ascii=False, indent=2, default=pydantic_encoder)
             logger.info(f"已保存{agent_name}的执行结果到{file_path}")
             return file_path
         except Exception as e:

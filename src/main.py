@@ -124,6 +124,10 @@ class AITestingSystem:
                     logger.error("测试用例格式错误：必须是字典或字典列表")
                     return {'status': 'error', 'message': '测试用例格式错误'}
                 
+                # 确保输出路径包含.xlsx扩展名
+                if not output_path.endswith('.xlsx'):
+                    output_path = output_path + '.xlsx'
+                
                 # 如果template_path是路径，则从文件加载模板
                 if isinstance(template_path, str):
                     try:
@@ -161,21 +165,30 @@ class AITestingSystem:
             raise
 
 async def main():
-    # Example usage
-    system = AITestingSystem()
-    doc_path = "/Users/liutao/Downloads/Auto_Generate_Test_Cases/docs/简本溯源-资质证照一键整理.pdf"
-    template_path = "/Users/liutao/Downloads/Auto_Generate_Test_Cases/src/templates/functional_test_template.json"
-    output_path = "test_cases.xlsx"
-    
-    result = await system.process_requirements(doc_path, template_path, output_path)
-    
-    if result.get('status') == 'success':
-        print("测试用例生成成功！")
-        print(f"共生成 {len(result.get('test_cases', []))} 个测试用例")
-        if 'workflow_result' in result:
-            print(f"工作流程状态: {result['workflow_result'].get('status', 'unknown')}")
-    else:
-        print(f"测试用例生成失败: {result.get('message', '未知错误')}")
+    # 使用命令行参数解析器获取参数
+    from utils.cli_parser import get_cli_args
+    try:
+        args = get_cli_args()
+        
+        system = AITestingSystem()
+        result = await system.process_requirements(
+            doc_path=args.doc_path,
+            template_path=args.template_path,
+            output_path=args.output_path
+        )
+        
+        if result.get('status') == 'success':
+            print("测试用例生成成功！")
+            print(f"共生成 {len(result.get('test_cases', []))} 个测试用例")
+            print(f"测试类型: {args.test_type}")
+            print(f"输出文件: {args.output_path}")
+            if 'workflow_result' in result:
+                print(f"工作流程状态: {result['workflow_result'].get('status', 'unknown')}")
+        else:
+            print(f"测试用例生成失败: {result.get('message', '未知错误')}")
+    except Exception as e:
+        print(f"程序执行错误: {str(e)}")
+        print("使用方法示例: python src/main.py -d docs/需求文档.pdf -t api -o test_cases.xlsx")
 
 if __name__ == "__main__":
     asyncio.run(main())

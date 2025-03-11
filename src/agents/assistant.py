@@ -63,7 +63,7 @@ class AssistantAgent:
         
         self.agents = agents
 
-    async def coordinate_workflow(self, task: dict):
+    async def coordinate_workflow(self, task: dict) -> dict:
         """协调不同代理之间的工作流程。"""
         try:
             # 验证任务参数
@@ -82,8 +82,8 @@ class AssistantAgent:
 
             # 开始协调
             try:
-                # 使用同步方式调用initiate_chat
-                user_proxy.initiate_chat(
+                # 使用异步方式调用initiate_chat
+                await user_proxy.a_initiate_chat(
                     self.agent,
                     message=f"""
                     协调以下测试任务：
@@ -153,8 +153,8 @@ class AssistantAgent:
 
             # 等待需求分析结果确认
             try:
-                # 使用同步方式调用initiate_chat
-                user_proxy.initiate_chat(
+                # 使用异步方式调用initiate_chat
+                await user_proxy.a_initiate_chat(
                     self.agent,
                     message=f"""
                     需求分析结果如下：

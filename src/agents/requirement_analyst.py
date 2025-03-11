@@ -172,25 +172,93 @@ class RequirementAnalystAgent:
                 if not response:
                     logger.warning("需求分析代理返回空响应")
                     return self._get_default_result()
-
+                
+                # 确保response是字符串类型
+                if isinstance(response, dict) and 'content' in response:
+                    response_str = response['content']
+                else:
+                    response_str = str(response)
+                
+                logger.info(f"AI响应内容: {response_str[:200]}...")  # 只打印前200个字符避免日志过长
+                
                 # 导入TestScenario类
                 from src.schemas.communication import TestScenario
-
-                # 使用预定义模板生成结构化结果
-                structured_result = {
-                    "functional_requirements": [],
-                    "non_functional_requirements": [],
-                    "test_scenarios": [
-                        TestScenario(
-                            id="TS001",
-                            description="",
-                            test_cases=[]
-                        )
-                    ],
-                    "risk_areas": []
-                }
-
-                # 直接返回结构化的字典对象
+                import json
+                import re
+                
+                # 尝试从响应中提取JSON部分
+                json_match = re.search(r'```(?:json)?\s*({\s*".*?})\s*```', response_str, re.DOTALL)
+                if not json_match:
+                    # 尝试直接从响应中查找JSON对象
+                    json_match = re.search(r'({[\s\S]*"functional_requirements"[\s\S]*})', response_str)
+                
+                structured_result = None
+                if json_match:
+                    try:
+                        # 提取JSON字符串并解析
+                        json_str = json_match.group(1)
+                        # 清理可能的格式问题
+                        json_str = json_str.strip()
+                        json_str = re.sub(r'```json|```', '', json_str)
+                        
+                        # 解析JSON
+                        parsed_result = json.loads(json_str)
+                        
+                        # 验证解析结果是否包含所需字段
+                        if isinstance(parsed_result, dict):
+                            structured_result = {
+                                "functional_requirements": parsed_result.get("functional_requirements", []),
+                                "non_functional_requirements": parsed_result.get("non_functional_requirements", []),
+                                "risk_areas": parsed_result.get("risk_areas", [])
+                            }
+                            
+                            # 处理test_scenarios字段
+                            if "test_scenarios" in parsed_result and isinstance(parsed_result["test_scenarios"], list):
+                                test_scenarios = []
+                                for scenario in parsed_result["test_scenarios"]:
+                                    if isinstance(scenario, dict):
+                                        test_scenarios.append(TestScenario(
+                                            id=scenario.get("id", f"TS{len(test_scenarios)+1:03d}"),
+                                            description=scenario.get("description", ""),
+                                            test_cases=scenario.get("test_cases", [])
+                                        ))
+                                structured_result["test_scenarios"] = test_scenarios
+                            else:
+                                structured_result["test_scenarios"] = [
+                                    TestScenario(
+                                        id="TS001",
+                                        description="需要提供具体的测试场景",
+                                        test_cases=[]
+                                    )
+                                ]
+                            
+                            logger.info("成功从JSON响应中提取分析结果")
+                    except Exception as e:
+                        logger.error(f"JSON解析错误: {str(e)}")
+                        structured_result = None
+                
+                # 如果无法从响应中提取有效的JSON，尝试使用文本解析方法
+                if not structured_result:
+                    logger.warning("无法从响应中提取有效的JSON，尝试使用文本解析方法")
+                    structured_result = {
+                        "functional_requirements": self._extract_functional_reqs(response_str),
+                        "non_functional_requirements": self._extract_non_functional_reqs(response_str),
+                        "test_scenarios": self._extract_test_scenarios(response_str),
+                        "risk_areas": self._extract_risk_areas(response_str)
+                    }
+                
+                # 验证结果并填充缺失字段
+                if not self._validate_analysis_result(structured_result):
+                    logger.warning("分析结果验证失败，填充缺失字段")
+                    self._fill_missing_requirements(structured_result)
+                
+                # 保存分析结果
+                self.agent_io.save_result('requirement_analyst', structured_result)
+                
+                # 保存到last_analysis属性
+                self.last_analysis = structured_result
+                
+                # 返回结构化的字典对象
                 return structured_result
 
             except Exception as e:

@@ -45,8 +45,8 @@ class DocumentProcessor:
             reader = PdfReader(file)
             return ' '.join(page.extract_text() for page in reader.pages)
     
-    def _extract_docx(self, file_path: Path) -> str:
-        doc = Document(file_path)
+    def _extract_docx(self, file_path:Path) -> str:
+        doc = Document(str(file_path))
         return ' '.join(paragraph.text for paragraph in doc.paragraphs)
     
     def _extract_markdown(self, file_path: Path) -> str:
