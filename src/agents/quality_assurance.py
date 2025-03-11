@@ -264,12 +264,47 @@ class QualityAssuranceAgent:
         return True
 
     def _process_review(self, original_cases: List[Dict], review_feedback) -> List[Dict]:
-        """处理审查反馈并更新测试用例。"""
-        reviewed_cases = []
-        for case in original_cases:
-            improved_case = self._improve_test_case(case, review_feedback)
-            reviewed_cases.append(improved_case)
-        return reviewed_cases
+        """处理审查反馈并更新测试用例。
+        优化：将测试用例分批次进行改进，避免一次处理过多导致超时或输出不完整。
+        """
+        if not original_cases:
+            logger.warning("没有测试用例需要处理")
+            return []
+            
+        # 将测试用例分成3批进行处理，避免一次处理过多
+        batch_size = max(1, len(original_cases) // 3)  # 确保至少每批1个用例
+        batches = [original_cases[i:i+batch_size] for i in range(0, len(original_cases), batch_size)]
+        logger.info(f"将{len(original_cases)}个测试用例分成{len(batches)}批进行处理，每批约{batch_size}个用例")
+        
+        # 分批处理测试用例
+        all_reviewed_cases = []
+        for i, batch in enumerate(batches):
+            logger.info(f"开始处理第{i+1}批测试用例，共{len(batch)}个")
+            batch_reviewed_cases = []
+            for case in batch:
+                improved_case = self._improve_test_case(case, review_feedback)
+                batch_reviewed_cases.append(improved_case)
+            
+            # 将当前批次的结果添加到总结果中
+            all_reviewed_cases.extend(batch_reviewed_cases)
+            logger.info(f"第{i+1}批测试用例处理完成")
+            
+            # 保存中间结果，防止因超时丢失数据
+            temp_result = {
+                "reviewed_cases": all_reviewed_cases,
+                "review_comments": self._extract_review_comments(review_feedback) if isinstance(review_feedback, str) else review_feedback,
+                "review_date": self._get_current_timestamp(),
+                "review_status": "in_progress",
+                "batch_progress": f"{i+1}/{len(batches)}"
+            }
+            try:
+                self.agent_io.save_result(f"quality_assurance_batch_{i+1}", temp_result)
+                logger.info(f"已保存第{i+1}批质量审查结果")
+            except Exception as e:
+                logger.error(f"保存第{i+1}批质量审查结果时出错: {str(e)}")
+        
+        logger.info(f"所有测试用例处理完成，共改进{len(all_reviewed_cases)}个测试用例")
+        return all_reviewed_cases
 
     def _improve_test_case(self, test_case: Dict, feedback) -> Dict:
         """根据反馈改进测试用例。"""

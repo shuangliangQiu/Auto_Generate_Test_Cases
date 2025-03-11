@@ -79,6 +79,7 @@ class AITestingSystem:
             
             # 初始化AgentIO用于读取各个agent的结果
             agent_io = AgentIO()
+            from agents.test_case_writer import TestCaseWriterAgent
             
             # 首先尝试从agent实例中获取结果
             for agent in self.assistant.agents:
@@ -151,6 +152,23 @@ class AITestingSystem:
                     output_path
                 )
                 logger.info(f"测试用例已导出到 {output_path}")
+                
+                # 清理测试用例改进过程中生成的临时批次文件
+                try:
+                    # 查找TestCaseWriterAgent实例并调用清理函数
+                    for agent in self.assistant.agents:
+                        if isinstance(agent, TestCaseWriterAgent):
+                            agent.delete_improved_batch_files()
+                            break
+                    else:
+                        # 如果在agents列表中没有找到，创建一个新实例并调用
+                        from src.agents.test_case_writer import TestCaseWriterAgent
+                        writer = TestCaseWriterAgent()
+                        writer.delete_improved_batch_files()
+                        logger.info("已清理测试用例改进过程中生成的临时批次文件")
+                except Exception as e:
+                    logger.warning(f"清理临时批次文件时出错: {str(e)}")
+                    # 继续执行，不影响主流程
             
             return {
                 "status": "success",

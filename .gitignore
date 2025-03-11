@@ -3,3 +3,6 @@ logs/ai_tester.log
 .~test_cases.xlsx
 */.env
 */.cache
+test_case.xlsx
+.gitignore
+.gitignore
