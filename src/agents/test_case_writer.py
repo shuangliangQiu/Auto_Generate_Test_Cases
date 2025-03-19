@@ -21,7 +21,13 @@ ds_model_v3 = os.getenv("DS_MODEL_V3")
 ds_model_r1 = os.getenv("DS_MODEL_R1")
 
 class TestCaseWriterAgent:
-    def __init__(self):
+    def __init__(self, concurrent_workers: int = 1):
+        """
+        初始化测试用例编写代理
+        
+        Args:
+            concurrent_workers: 并发工作线程数，默认为1（不使用并发）
+        """
         self.config_list_gpt = [
             {
                 "model": gpt_model,
@@ -50,6 +56,10 @@ class TestCaseWriterAgent:
         
         # 初始化AgentIO用于保存和加载测试用例
         self.agent_io = AgentIO()
+        
+        # 设置并发工作线程数
+        self.concurrent_workers = max(1, concurrent_workers)  # 确保至少为1
+        logger.info(f"测试用例编写代理初始化，并发工作线程数: {self.concurrent_workers}")
         
         self.agent = autogen.AssistantAgent(
             name="test_case_writer",
@@ -133,37 +143,47 @@ class TestCaseWriterAgent:
             
             logger.info(f"将按{len(feature_groups)}个功能点分批生成测试用例")
             
-            # 分批生成测试用例
-            all_test_cases = []
-            for i, (feature, items) in enumerate(feature_groups.items()):
-                logger.info(f"开始为功能点 '{feature}' 生成测试用例 ({i+1}/{len(feature_groups)})")
-                
-                # 为单个功能点生成测试用例
-                feature_test_cases = self._generate_feature_test_cases(
-                    feature=feature,
-                    feature_items=items,
+            # 根据并发工作线程数决定使用并发还是顺序处理
+            if self.concurrent_workers > 1:
+                logger.info(f"使用并发方式处理功能点，并发数: {self.concurrent_workers}")
+                all_test_cases = self._generate_feature_test_cases_concurrent(
+                    feature_groups=feature_groups,
                     priorities=priorities,
                     test_approach=test_approach
                 )
-                
-                if feature_test_cases:
-                    all_test_cases.extend(feature_test_cases)
-                    logger.info(f"功能点 '{feature}' 生成了 {len(feature_test_cases)} 个测试用例")
+            else:
+                logger.info("使用顺序方式处理功能点")
+                # 分批生成测试用例
+                all_test_cases = []
+                for i, (feature, items) in enumerate(feature_groups.items()):
+                    logger.info(f"开始为功能点 '{feature}' 生成测试用例 ({i+1}/{len(feature_groups)})")
                     
-                    # 保存中间结果，防止因超时丢失数据
-                    temp_result = {
-                        "test_cases": feature_test_cases,  # 只保存当前功能点的测试用例
-                        "generation_date": self._get_current_timestamp(),
-                        "generation_status": "in_progress",
-                        "feature_progress": f"{i+1}/{len(feature_groups)}"
-                    }
-                    try:
-                        self.agent_io.save_result(f"test_case_writer_feature_{i+1}", temp_result)
-                        logger.info(f"已保存功能点 '{feature}' 的测试用例生成结果")
-                    except Exception as e:
-                        logger.error(f"保存功能点 '{feature}' 的测试用例生成结果时出错: {str(e)}")
-                else:
-                    logger.warning(f"功能点 '{feature}' 未能生成有效的测试用例")
+                    # 为单个功能点生成测试用例
+                    feature_test_cases = self._generate_feature_test_cases(
+                        feature=feature,
+                        feature_items=items,
+                        priorities=priorities,
+                        test_approach=test_approach
+                    )
+                    
+                    if feature_test_cases:
+                        all_test_cases.extend(feature_test_cases)
+                        logger.info(f"功能点 '{feature}' 生成了 {len(feature_test_cases)} 个测试用例")
+                        
+                        # 保存中间结果，防止因超时丢失数据
+                        temp_result = {
+                            "test_cases": feature_test_cases,  # 只保存当前功能点的测试用例
+                            "generation_date": self._get_current_timestamp(),
+                            "generation_status": "in_progress",
+                            "feature_progress": f"{i+1}/{len(feature_groups)}"
+                        }
+                        try:
+                            self.agent_io.save_result(f"test_case_writer_feature_{i+1}", temp_result)
+                            logger.info(f"已保存功能点 '{feature}' 的测试用例生成结果")
+                        except Exception as e:
+                            logger.error(f"保存功能点 '{feature}' 的测试用例生成结果时出错: {str(e)}")
+                    else:
+                        logger.warning(f"功能点 '{feature}' 未能生成有效的测试用例")
             
             # 如果没有生成任何测试用例，尝试使用整体生成方式
             if not all_test_cases:
@@ -894,6 +914,101 @@ class TestCaseWriterAgent:
         except Exception as e:
             logger.error(f"删除临时改进批次文件时出错: {str(e)}")
         
+    def _generate_feature_test_cases_concurrent(self, feature_groups: Dict, priorities: List[Dict], test_approach: Dict) -> List[Dict]:
+        """使用并发方式为多个功能点生成测试用例。
+        根据concurrent_workers参数控制并发数。
+        """
+        if not feature_groups:
+            logger.warning("没有功能点需要处理")
+            return []
+        
+        # 确定批次大小和批次数
+        total_features = len(feature_groups)
+        # 根据并发工作线程数确定批次数，每个工作线程至少处理一个批次
+        num_batches = min(total_features, self.concurrent_workers * 2)  # 每个工作线程处理约2个批次
+        batch_size = max(1, total_features // num_batches)  # 确保每批至少有1个功能点
+        
+        # 将功能点分成批次
+        feature_items = list(feature_groups.items())
+        batches = [feature_items[i:i+batch_size] for i in range(0, total_features, batch_size)]
+        logger.info(f"将{total_features}个功能点分成{len(batches)}批进行处理，每批约{batch_size}个功能点，并发工作线程数: {self.concurrent_workers}")
+        
+        # 使用线程池并发处理功能点
+        all_test_cases = []
+        import concurrent.futures
+        
+        # 定义批处理函数
+        def process_batch(batch_index, batch_features):
+            logger.info(f"开始处理第{batch_index+1}批功能点，共{len(batch_features)}个")
+            batch_test_cases = []
+            
+            for i, (feature, items) in enumerate(batch_features):
+                logger.info(f"开始为功能点 '{feature}' 生成测试用例 (批次{batch_index+1}，功能点{i+1}/{len(batch_features)})")
+                
+                # 为单个功能点生成测试用例
+                feature_test_cases = self._generate_feature_test_cases(
+                    feature=feature,
+                    feature_items=items,
+                    priorities=priorities,
+                    test_approach=test_approach
+                )
+                
+                if feature_test_cases:
+                    batch_test_cases.extend(feature_test_cases)
+                    logger.info(f"功能点 '{feature}' 生成了 {len(feature_test_cases)} 个测试用例")
+                    
+                    # 保存中间结果，防止因超时丢失数据
+                    feature_index = batch_index * batch_size + i + 1
+                    temp_result = {
+                        "test_cases": feature_test_cases,  # 只保存当前功能点的测试用例
+                        "generation_date": self._get_current_timestamp(),
+                        "generation_status": "in_progress",
+                        "feature_progress": f"{feature_index}/{total_features}"
+                    }
+                    try:
+                        self.agent_io.save_result(f"test_case_writer_feature_{feature_index}", temp_result)
+                        logger.info(f"已保存功能点 '{feature}' 的测试用例生成结果")
+                    except Exception as e:
+                        logger.error(f"保存功能点 '{feature}' 的测试用例生成结果时出错: {str(e)}")
+                else:
+                    logger.warning(f"功能点 '{feature}' 未能生成有效的测试用例")
+            
+            logger.info(f"第{batch_index+1}批功能点处理完成，共生成{len(batch_test_cases)}个测试用例")
+            return batch_test_cases
+        
+        # 使用线程池执行器并发处理批次
+        batch_results = []  # 初始化为空列表，而不是[None] * len(batches)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.concurrent_workers) as executor:
+            # 提交所有批次任务
+            future_to_batch = {executor.submit(process_batch, i, batch): i for i, batch in enumerate(batches)}
+            
+            # 收集结果但不立即合并
+            for future in concurrent.futures.as_completed(future_to_batch):
+                batch_index = future_to_batch[future]
+                try:
+                    batch_result = future.result()
+                    # 确保batch_results有足够的元素
+                    while len(batch_results) <= batch_index:
+                        batch_results.append(None)
+                    batch_results[batch_index] = batch_result  # 存储批次结果
+                    logger.info(f"第{batch_index+1}批测试用例处理完成并保存")
+                except Exception as e:
+                    logger.error(f"处理第{batch_index+1}批测试用例时出错: {str(e)}")
+                    # 如果处理失败，使用原始批次
+                    # 确保batch_results有足够的元素
+                    while len(batch_results) <= batch_index:
+                        batch_results.append(None)
+                    batch_results[batch_index] = batches[batch_index]
+        
+        # 所有批次处理完成后，统一合并结果
+        for batch_result in batch_results:
+            if batch_result:
+                all_test_cases.extend(batch_result)
+        logger.info(f"所有批次测试用例结果已合并完成")
+        
+        logger.info(f"所有测试用例处理完成，共生成{len(all_test_cases)}个测试用例")
+        return all_test_cases
+
     def _merge_feature_test_cases(self, feature_count: int) -> None:
         """合并所有功能点的测试用例文件。
         
@@ -933,7 +1048,7 @@ class TestCaseWriterAgent:
             
     def improve_test_cases(self, test_cases: List[Dict], qa_feedback: Union[str, Dict]) -> List[Dict]:
         """根据质量保证团队的反馈改进测试用例。
-        优化：将测试用例分批次进行改进，避免一次处理过多导致超时或输出不完整。
+        优化：将测试用例分批次进行改进，并使用并发处理方式提高效率，并发数由concurrent_workers参数控制。
         """
         try:
             # 参数验证
@@ -961,40 +1076,46 @@ class TestCaseWriterAgent:
                 logger.warning("未找到有效的反馈内容")
                 return test_cases
             
-            # 将测试用例分成3批进行处理，避免一次处理过多
-            batch_size = max(1, len(test_cases) // 10)  # 确保至少每批1个用例
-            batches = [test_cases[i:i+batch_size] for i in range(0, len(test_cases), batch_size)]
-            logger.info(f"将{len(test_cases)}个测试用例分成{len(batches)}批进行处理，每批约{batch_size}个用例")
-            
-            # 分批处理测试用例
-            all_improved_cases = []
-            for i, batch in enumerate(batches):
-                logger.info(f"开始处理第{i+1}批测试用例，共{len(batch)}个")
+            # 根据并发工作线程数决定使用并发还是顺序处理
+            if self.concurrent_workers > 1:
+                logger.info(f"使用并发方式处理测试用例改进，并发数: {self.concurrent_workers}")
+                all_improved_cases = self._improve_test_cases_concurrent(test_cases, feedback_str, review_comments)
+            else:
+                logger.info("使用顺序方式处理测试用例改进")
+                # 将测试用例分成10批进行处理，避免一次处理过多
+                batch_size = max(1, len(test_cases) // 10)  # 确保至少每批1个用例
+                batches = [test_cases[i:i+batch_size] for i in range(0, len(test_cases), batch_size)]
+                logger.info(f"将{len(test_cases)}个测试用例分成{len(batches)}批进行处理，每批约{batch_size}个用例")
                 
-                # 使用大模型改进当前批次的测试用例
-                batch_improved_cases = self._improve_with_llm(batch, feedback_str)
-                
-                # 如果改进失败，使用原始测试用例
-                if not batch_improved_cases:
-                    logger.warning(f"第{i+1}批测试用例改进失败，使用原始测试用例")
-                    all_improved_cases.extend(batch)
-                else:
-                    all_improved_cases.extend(batch_improved_cases)
-                    logger.info(f"第{i+1}批测试用例改进完成")
-                
-                # 保存中间结果，防止因超时丢失数据
-                temp_result = {
-                    "test_cases": all_improved_cases,
-                    "review_comments": review_comments,
-                    "review_date": self._get_current_timestamp(),
-                    "review_status": "in_progress",
-                    "batch_progress": f"{i+1}/{len(batches)}"
-                }
-                try:
-                    self.agent_io.save_result(f"test_case_writer_improved_batch_{i+1}", temp_result)
-                    logger.info(f"已保存第{i+1}批改进后的测试用例")
-                except Exception as e:
-                    logger.error(f"保存第{i+1}批改进后的测试用例时出错: {str(e)}")
+                # 分批处理测试用例
+                all_improved_cases = []
+                for i, batch in enumerate(batches):
+                    logger.info(f"开始处理第{i+1}批测试用例，共{len(batch)}个")
+                    
+                    # 使用大模型改进当前批次的测试用例
+                    batch_improved_cases = self._improve_with_llm(batch, feedback_str)
+                    
+                    # 如果改进失败，使用原始测试用例
+                    if not batch_improved_cases:
+                        logger.warning(f"第{i+1}批测试用例改进失败，使用原始测试用例")
+                        all_improved_cases.extend(batch)
+                    else:
+                        all_improved_cases.extend(batch_improved_cases)
+                        logger.info(f"第{i+1}批测试用例改进完成")
+                    
+                    # 保存中间结果，防止因超时丢失数据
+                    temp_result = {
+                        "test_cases": batch_improved_cases,  # 只保存当前批次的结果，而不是累积结果
+                        "review_comments": review_comments,
+                        "review_date": self._get_current_timestamp(),
+                        "review_status": "in_progress",
+                        "batch_progress": f"{i+1}/{len(batches)}"
+                    }
+                    try:
+                        self.agent_io.save_result(f"test_case_writer_improved_batch_{i+1}", temp_result)
+                        logger.info(f"已保存第{i+1}批改进后的测试用例")
+                    except Exception as e:
+                        logger.error(f"保存第{i+1}批改进后的测试用例时出错: {str(e)}")
             
             # 如果没有改进任何测试用例，返回原始测试用例
             if not all_improved_cases:
@@ -1011,6 +1132,83 @@ class TestCaseWriterAgent:
         except Exception as e:
             logger.error(f"改进测试用例错误: {str(e)}")
             return test_cases
+    
+    def _improve_test_cases_concurrent(self, test_cases: List[Dict], feedback_str: str, review_comments: Dict) -> List[Dict]:
+        """使用并发方式处理测试用例改进。
+        根据concurrent_workers参数控制并发数。
+        """
+        if not test_cases:
+            logger.warning("没有测试用例需要处理")
+            return []
+        
+        # 确定批次大小和批次数
+        total_cases = len(test_cases)
+        # 根据并发工作线程数确定批次数，每个工作线程至少处理一个批次
+        num_batches = min(total_cases, self.concurrent_workers * 2)  # 每个工作线程处理约2个批次
+        batch_size = max(1, total_cases // num_batches)  # 确保每批至少有1个用例
+        
+        batches = [test_cases[i:i+batch_size] for i in range(0, total_cases, batch_size)]
+        logger.info(f"将{total_cases}个测试用例分成{len(batches)}批进行处理，每批约{batch_size}个用例，并发工作线程数: {self.concurrent_workers}")
+        
+        # 使用线程池并发处理测试用例
+        all_improved_cases = []
+        import concurrent.futures
+        
+        # 定义批处理函数
+        def process_batch(batch_index, batch_cases):
+            logger.info(f"开始处理第{batch_index+1}批测试用例，共{len(batch_cases)}个")
+            
+            # 使用大模型改进当前批次的测试用例
+            batch_improved_cases = self._improve_with_llm(batch_cases, feedback_str)
+            
+            # 如果改进失败，使用原始测试用例
+            if not batch_improved_cases:
+                logger.warning(f"第{batch_index+1}批测试用例改进失败，使用原始测试用例")
+                batch_improved_cases = batch_cases
+            else:
+                logger.info(f"第{batch_index+1}批测试用例改进完成")
+            
+            # 保存中间结果，防止因超时丢失数据
+            temp_result = {
+                "test_cases": batch_improved_cases,  # 只保存当前批次的结果，而不是累积结果
+                "review_comments": review_comments,
+                "review_date": self._get_current_timestamp(),
+                "review_status": "in_progress",
+                "batch_progress": f"{batch_index+1}/{len(batches)}"
+            }
+            try:
+                self.agent_io.save_result(f"test_case_writer_improved_batch_{batch_index+1}", temp_result)
+                logger.info(f"已保存第{batch_index+1}批改进后的测试用例")
+            except Exception as e:
+                logger.error(f"保存第{batch_index+1}批改进后的测试用例时出错: {str(e)}")
+                
+            logger.info(f"第{batch_index+1}批测试用例处理完成")
+            return batch_improved_cases
+        
+        # 使用线程池执行器并发处理批次
+        batch_results: List[List[Dict] | None] = [None] * len(batches)  # 预先分配结果列表
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.concurrent_workers) as executor:
+            # 提交所有批次任务
+            future_to_batch = {executor.submit(process_batch, i, batch): i for i, batch in enumerate(batches)}
+            
+            # 收集结果但不立即合并
+            for future in concurrent.futures.as_completed(future_to_batch):
+                batch_index = future_to_batch[future]
+                try:
+                    batch_result = future.result()
+                    batch_results[batch_index] = batch_result  # 存储批次结果
+                    logger.info(f"第{batch_index+1}批测试用例处理完成并保存")
+                except Exception as e:
+                    logger.error(f"处理第{batch_index+1}批测试用例时出错: {str(e)}")
+        
+        # 所有批次处理完成后，统一合并结果
+        for batch_result in batch_results:
+            if batch_result:
+                all_improved_cases.extend(batch_result)
+        logger.info(f"所有批次测试用例结果已合并完成")
+        
+        logger.info(f"所有测试用例处理完成，共改进{len(all_improved_cases)}个测试用例")
+        return all_improved_cases
             
     def _improve_with_llm(self, test_cases: List[Dict], feedback: str) -> List[Dict]:
         """使用大模型改进测试用例。"""
@@ -1087,7 +1285,7 @@ class TestCaseWriterAgent:
                         logger.warning(f"尝试 {attempt+1}/{max_retries}: 大模型未返回有效的测试用例，将重试")
                         continue
                     
-                    # 确保改进后的测试用例包含所有必要字段
+                    # 确保改进后的测试用例包含所有必需字段
                     validated_cases = []
                     for case in improved_cases:
                         if self._validate_test_case(case):

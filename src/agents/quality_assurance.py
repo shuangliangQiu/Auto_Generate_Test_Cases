@@ -20,7 +20,12 @@ ds_model_v3 = os.getenv("DS_MODEL_V3")
 ds_model_r1 = os.getenv("DS_MODEL_R1")
 
 class QualityAssuranceAgent:
-    def __init__(self):
+    def __init__(self, concurrent_workers: int = 1):
+        """初始化质量保证代理
+        
+        Args:
+            concurrent_workers: 并发工作线程数，默认为1（不使用并发）
+        """
         self.config_list_gpt = [
             {
                 "model": gpt_model,
@@ -46,6 +51,10 @@ class QualityAssuranceAgent:
                 "base_url": ds_base_url,
             }
         ]
+        
+        # 设置并发工作线程数
+        self.concurrent_workers = max(1, concurrent_workers)  # 确保至少为1
+        logger.info(f"质量保证代理初始化，并发工作线程数: {self.concurrent_workers}")
         
         # 初始化AgentIO用于保存和加载审查结果
         self.agent_io = AgentIO()
@@ -92,7 +101,10 @@ class QualityAssuranceAgent:
             logger.error(f"加载质量审查结果时出错: {str(e)}")
     
     def review(self, test_cases: List[Dict]) -> Dict:
-        """审查和改进测试用例。"""
+        """审查和改进测试用例。
+        
+        使用并发处理方式提高处理效率，并发数由concurrent_workers参数控制。
+        """
         try:
             # 验证输入参数
             if not test_cases or not isinstance(test_cases, list):
@@ -139,15 +151,21 @@ class QualityAssuranceAgent:
                 logger.warning(f"审查反馈格式不正确: {type(review_feedback)}，转换为字符串")
                 review_feedback = str(review_feedback)
             
-            # 移除直接调用TestCaseWriterAgent的部分，只返回审查结果
-            # 让AssistantAgent负责协调改进流程
-            
             # 提取反馈中的关键改进建议
             review_comments = self._extract_review_comments(review_feedback)
             
-            # 创建包含审查反馈和原始测试用例的结果
+            # 使用并发方式处理测试用例
+            if self.concurrent_workers > 1:
+                logger.info(f"使用并发方式处理测试用例，并发数: {self.concurrent_workers}")
+                reviewed_cases = self._process_review_concurrent(test_cases, review_feedback)
+            else:
+                logger.info("使用顺序方式处理测试用例")
+                # 调用原有的处理方法
+                reviewed_cases = self._process_review(test_cases, review_feedback)
+            
+            # 创建包含审查反馈和改进后测试用例的结果
             result = {
-                "reviewed_cases": test_cases,  # 返回原始测试用例，由AssistantAgent负责改进
+                "reviewed_cases": reviewed_cases,
                 "review_comments": review_comments,
                 "review_date": self._get_current_timestamp(),
                 "review_status": "completed"
@@ -167,8 +185,11 @@ class QualityAssuranceAgent:
                 # 即使保存失败，仍然返回结果
             
             # 保存审查结果到last_review属性
-            self.last_review = test_cases
+            self.last_review = reviewed_cases
             logger.info(f"测试用例审查完成，共审查 {len(test_cases)} 个测试用例")
+            
+            # 清理临时批次文件
+            self._delete_batch_files()
             
             return result
 
@@ -181,6 +202,60 @@ class QualityAssuranceAgent:
                 "review_status": "error"
             }
             return error_result
+            
+    def _merge_feature_test_cases(self, batch_count: int) -> Dict:
+        """合并多个批次的测试用例结果
+        
+        Args:
+            batch_count: 批次数量
+            
+        Returns:
+            合并后的结果
+        """
+        try:
+            all_reviewed_cases = []
+            all_review_comments = {
+                "completeness": [],
+                "clarity": [],
+                "executability": [],
+                "boundary_cases": [],
+                "error_scenarios": []
+            }
+            
+            # 加载并合并所有批次的结果
+            for i in range(1, batch_count + 1):
+                batch_result = self.agent_io.load_result(f"quality_assurance_batch_{i}")
+                if batch_result and "reviewed_cases" in batch_result:
+                    all_reviewed_cases.extend(batch_result["reviewed_cases"])
+                    
+                    # 合并评论
+                    if "review_comments" in batch_result:
+                        for category in all_review_comments.keys():
+                            if category in batch_result["review_comments"]:
+                                all_review_comments[category].extend(batch_result["review_comments"][category])
+            
+            # 去重评论
+            for category in all_review_comments.keys():
+                all_review_comments[category] = list(set(all_review_comments[category]))
+            
+            # 创建合并结果
+            merged_result = {
+                "reviewed_cases": all_reviewed_cases,
+                "review_comments": all_review_comments,
+                "review_date": self._get_current_timestamp(),
+                "review_status": "completed",
+                "merged_from_batches": batch_count
+            }
+            
+            # 保存合并结果
+            self.agent_io.save_result("quality_assurance_merged", merged_result)
+            logger.info(f"已合并{batch_count}个批次的测试用例结果，共{len(all_reviewed_cases)}个测试用例")
+            
+            return merged_result
+            
+        except Exception as e:
+            logger.error(f"合并测试用例结果时出错: {str(e)}")
+            return {"error": str(e), "review_status": "error"}
 
     def _extract_review_comments(self, feedback: str) -> Dict:
         """从字符串格式的反馈中提取结构化的审查评论。"""
@@ -263,45 +338,66 @@ class QualityAssuranceAgent:
             
         return True
 
-    def _process_review(self, original_cases: List[Dict], review_feedback) -> List[Dict]:
-        """处理审查反馈并更新测试用例。
-        优化：将测试用例分批次进行改进，避免一次处理过多导致超时或输出不完整。
+    def _process_review_concurrent(self, original_cases: List[Dict], review_feedback) -> List[Dict]:
+        """使用并发方式处理审查反馈并更新测试用例。
+        根据concurrent_workers参数控制并发数。
         """
         if not original_cases:
             logger.warning("没有测试用例需要处理")
             return []
-            
-        # 将测试用例分成3批进行处理，避免一次处理过多
-        batch_size = max(1, len(original_cases) // 3)  # 确保至少每批1个用例
-        batches = [original_cases[i:i+batch_size] for i in range(0, len(original_cases), batch_size)]
-        logger.info(f"将{len(original_cases)}个测试用例分成{len(batches)}批进行处理，每批约{batch_size}个用例")
         
-        # 分批处理测试用例
+        # 确定批次大小和批次数
+        total_cases = len(original_cases)
+        # 根据并发工作线程数确定批次数，每个工作线程至少处理一个批次
+        num_batches = min(total_cases, self.concurrent_workers * 2)  # 每个工作线程处理约2个批次
+        batch_size = max(1, total_cases // num_batches)  # 确保每批至少有1个用例
+        
+        batches = [original_cases[i:i+batch_size] for i in range(0, total_cases, batch_size)]
+        logger.info(f"将{total_cases}个测试用例分成{len(batches)}批进行处理，每批约{batch_size}个用例，并发工作线程数: {self.concurrent_workers}")
+        
+        # 使用线程池并发处理测试用例
         all_reviewed_cases = []
-        for i, batch in enumerate(batches):
-            logger.info(f"开始处理第{i+1}批测试用例，共{len(batch)}个")
+        import concurrent.futures
+        
+        # 定义批处理函数
+        def process_batch(batch_index, batch_cases):
+            logger.info(f"开始处理第{batch_index+1}批测试用例，共{len(batch_cases)}个")
             batch_reviewed_cases = []
-            for case in batch:
+            for case in batch_cases:
                 improved_case = self._improve_test_case(case, review_feedback)
                 batch_reviewed_cases.append(improved_case)
             
-            # 将当前批次的结果添加到总结果中
-            all_reviewed_cases.extend(batch_reviewed_cases)
-            logger.info(f"第{i+1}批测试用例处理完成")
-            
             # 保存中间结果，防止因超时丢失数据
             temp_result = {
-                "reviewed_cases": all_reviewed_cases,
+                "reviewed_cases": batch_reviewed_cases,  # 只保存当前批次的结果，而不是累积结果
                 "review_comments": self._extract_review_comments(review_feedback) if isinstance(review_feedback, str) else review_feedback,
                 "review_date": self._get_current_timestamp(),
                 "review_status": "in_progress",
-                "batch_progress": f"{i+1}/{len(batches)}"
+                "batch_progress": f"{batch_index+1}/{len(batches)}"
             }
             try:
-                self.agent_io.save_result(f"quality_assurance_batch_{i+1}", temp_result)
-                logger.info(f"已保存第{i+1}批质量审查结果")
+                self.agent_io.save_result(f"quality_assurance_batch_{batch_index+1}", temp_result)
+                logger.info(f"已保存第{batch_index+1}批质量审查结果")
             except Exception as e:
-                logger.error(f"保存第{i+1}批质量审查结果时出错: {str(e)}")
+                logger.error(f"保存第{batch_index+1}批质量审查结果时出错: {str(e)}")
+                
+            logger.info(f"第{batch_index+1}批测试用例处理完成")
+            return batch_reviewed_cases
+        
+        # 使用线程池执行器并发处理批次
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.concurrent_workers) as executor:
+            # 提交所有批次任务
+            future_to_batch = {executor.submit(process_batch, i, batch): i for i, batch in enumerate(batches)}
+            
+            # 收集结果
+            for future in concurrent.futures.as_completed(future_to_batch):
+                batch_index = future_to_batch[future]
+                try:
+                    batch_result = future.result()
+                    all_reviewed_cases.extend(batch_result)
+                    logger.info(f"已合并第{batch_index+1}批测试用例结果")
+                except Exception as e:
+                    logger.error(f"处理第{batch_index+1}批测试用例时出错: {str(e)}")
         
         logger.info(f"所有测试用例处理完成，共改进{len(all_reviewed_cases)}个测试用例")
         return all_reviewed_cases
@@ -426,3 +522,71 @@ class QualityAssuranceAgent:
     def _validate_improvements(self, original: Dict, improved: Dict) -> bool:
         """验证改进是否保持测试用例的完整性。"""
         return all(key in improved for key in original.keys())
+        
+    def _delete_batch_files(self) -> None:
+        """删除质量审查过程中生成的临时批次文件。
+        在测试用例审查完成后调用此函数清理中间文件。
+        """
+        try:
+            import os
+            import glob
+            
+            # 查找所有质量审查批次的临时文件
+            pattern = os.path.join(self.agent_io.output_dir, "quality_assurance_batch_*_result.json")
+            batch_files = glob.glob(pattern)
+            
+            # 删除找到的所有批次文件
+            for file_path in batch_files:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    logger.info(f"已删除临时质量审查批次文件: {file_path}")
+            
+            if batch_files:
+                logger.info(f"所有临时质量审查批次文件已清理完毕，共删除 {len(batch_files)} 个文件")
+            else:
+                logger.info("未找到需要清理的临时质量审查批次文件")
+        except Exception as e:
+            logger.error(f"删除临时质量审查批次文件时出错: {str(e)}")
+        
+    def _process_review(self, original_cases: List[Dict], review_feedback) -> List[Dict]:
+        """处理审查反馈并更新测试用例。
+        优化：将测试用例分批次进行改进，避免一次处理过多导致超时或输出不完整。
+        """
+        if not original_cases:
+            logger.warning("没有测试用例需要处理")
+            return []
+            
+        # 将测试用例分成3批进行处理，避免一次处理过多
+        batch_size = max(1, len(original_cases) // 3)  # 确保至少每批1个用例
+        batches = [original_cases[i:i+batch_size] for i in range(0, len(original_cases), batch_size)]
+        logger.info(f"将{len(original_cases)}个测试用例分成{len(batches)}批进行处理，每批约{batch_size}个用例")
+        
+        # 分批处理测试用例
+        all_reviewed_cases = []
+        for i, batch in enumerate(batches):
+            logger.info(f"开始处理第{i+1}批测试用例，共{len(batch)}个")
+            batch_reviewed_cases = []
+            for case in batch:
+                improved_case = self._improve_test_case(case, review_feedback)
+                batch_reviewed_cases.append(improved_case)
+            
+            # 将当前批次的结果添加到总结果中
+            all_reviewed_cases.extend(batch_reviewed_cases)
+            logger.info(f"第{i+1}批测试用例处理完成")
+            
+            # 保存中间结果，防止因超时丢失数据
+            temp_result = {
+                "reviewed_cases": batch_reviewed_cases,  # 只保存当前批次的结果，而不是累积结果
+                "review_comments": self._extract_review_comments(review_feedback) if isinstance(review_feedback, str) else review_feedback,
+                "review_date": self._get_current_timestamp(),
+                "review_status": "in_progress",
+                "batch_progress": f"{i+1}/{len(batches)}"
+            }
+            try:
+                self.agent_io.save_result(f"quality_assurance_batch_{i+1}", temp_result)
+                logger.info(f"已保存第{i+1}批质量审查结果")
+            except Exception as e:
+                logger.error(f"保存第{i+1}批质量审查结果时出错: {str(e)}")
+        
+        logger.info(f"所有测试用例处理完成，共改进{len(all_reviewed_cases)}个测试用例")
+        return all_reviewed_cases

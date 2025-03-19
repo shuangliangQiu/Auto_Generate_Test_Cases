@@ -24,7 +24,7 @@ from utils.logger import setup_logger
 logger = logging.getLogger(__name__)
 
 class AITestingSystem:
-    def __init__(self):
+    def __init__(self, concurrent_workers: int = 1):
         # self.config = load_config()
         setup_logger()
         
@@ -36,8 +36,8 @@ class AITestingSystem:
         # Initialize agents
         self.requirement_analyst = RequirementAnalystAgent()
         self.test_designer = TestDesignerAgent()
-        self.test_case_writer = TestCaseWriterAgent()
-        self.quality_assurance = QualityAssuranceAgent()
+        self.test_case_writer = TestCaseWriterAgent(concurrent_workers=concurrent_workers)
+        self.quality_assurance = QualityAssuranceAgent(concurrent_workers=concurrent_workers)
         self.assistant = AssistantAgent(
             [self.requirement_analyst, self.test_designer, 
              self.test_case_writer, self.quality_assurance]
@@ -188,7 +188,8 @@ async def main():
     try:
         args = get_cli_args()
         
-        system = AITestingSystem()
+        # 创建AITestingSystem实例，传入并发工作线程数
+        system = AITestingSystem(concurrent_workers=args.concurrent_workers)
         result = await system.process_requirements(
             doc_path=args.doc_path,
             template_path=args.template_path,

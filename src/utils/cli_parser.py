@@ -45,6 +45,15 @@ class CLIParser:
             choices=["functional", "api"],
             default="functional"
         )
+        
+        # 添加并发数参数
+        self.parser.add_argument(
+            "-c", "--concurrent",
+            dest="concurrent_workers",
+            help="并发工作线程数，用于提高测试用例生成和审查效率",
+            type=int,
+            default=1
+        )
     
     def parse_args(self):
         """解析命令行参数"""

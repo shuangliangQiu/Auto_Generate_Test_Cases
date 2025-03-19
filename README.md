@@ -48,13 +48,14 @@ cp .env.example .env
 本工具支持通过命令行参数来控制测试用例的生成：
 
 ```bash
-python src/main.py -d <需求文档路径> [-o <输出文件路径>] [-t <测试类型>]
+python src/main.py -d <需求文档路径> [-o <输出文件路径>] [-t <测试类型>] [-c <并发数：建议 10 以内>]
 ```
 
 ### 命令行参数说明
 
 - `-d, --doc`：必需参数，指定需求文档的路径，支持PDF、Word、Markdown或Text格式
 - `-o, --output`：可选参数，指定测试用例输出文件路径，默认为"test_cases.xlsx"
+- `-c, --concurrency`：可选参数，指定并发数，默认为1
 - `-t, --type`：可选参数，指定测试类型，可选值：
   - `functional`：功能测试（默认值）
   - `api`：接口测试
@@ -63,14 +64,14 @@ python src/main.py -d <需求文档路径> [-o <输出文件路径>] [-t <测试
 
 1. 生成功能测试用例：
 ```bash
-python src/main.py -d docs/需求文档.pdf -o 功能测试用例.xlsx
+python src/main.py -d docs/需求文档.pdf -o 功能测试用例.xlsx -c 5
 # 或
-python src/main.py -d docs/需求文档.pdf -t functional -o 功能测试用例.xlsx
+python src/main.py -d docs/需求文档.pdf -t functional -o 功能测试用例.xlsx -c 5
 ```
 
 2. 生成接口测试用例：
 ```bash
-python src/main.py -d docs/接口文档.md -t api -o 接口测试用例.xlsx
+python src/main.py -d docs/接口文档.md -t api -o 接口测试用例.xlsx -c 5
 ```
 
 ## 项目结构
