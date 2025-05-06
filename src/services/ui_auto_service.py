@@ -1,14 +1,7 @@
-import asyncio
-import json
 import logging
-import os
 from datetime import datetime
 import pandas as pd
-from pathlib import Path
 from src.agents.browser_use_agent import browser_use_agent, read_test_cases
-from src.utils.env_loader import load_env_variables
-from langchain_openai import ChatOpenAI
-from pydantic import SecretStr
 
 logger = logging.getLogger(__name__)
 

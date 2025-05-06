@@ -40,7 +40,6 @@ class UnicodeStreamHandler(logging.StreamHandler):
 # 添加项目根目录到 Python 路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from src.utils.env_loader import load_env_variables
 
 # 加载环境变量
 load_dotenv()

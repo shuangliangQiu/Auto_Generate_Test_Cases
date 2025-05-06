@@ -9,7 +9,6 @@ from typing import Dict, Optional
 from models.template import Template
 import json
 from src.utils.agent_io import AgentIO
-from src.utils.env_loader import load_env_variables
 
 from agents.assistant import AssistantAgent
 from agents.requirement_analyst import RequirementAnalystAgent
