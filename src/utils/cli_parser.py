@@ -22,9 +22,17 @@ class CLIParser:
         self.parser.add_argument(
             "-d", "--doc", 
             dest="doc_path",
-            help="需求文档路径",
+            help="需求文档路径或测试用例文件路径",
             type=str,
             required=True
+        )
+        
+        # 添加输入文件参数（用于UI自动化测试）
+        self.parser.add_argument(
+            "-i", "--input",
+            dest="input_path",
+            help="测试用例文件路径（用于UI自动化测试）",
+            type=str
         )
         
         # 添加输出路径参数
@@ -40,9 +48,9 @@ class CLIParser:
         self.parser.add_argument(
             "-t", "--type",
             dest="test_type",
-            help="测试类型：functional(功能测试) 或 api(接口测试)",
+            help="测试类型：functional(功能测试)、api(接口测试) 或 ui_auto(UI自动化测试)",
             type=str,
-            choices=["functional", "api"],
+            choices=["functional", "api", "ui_auto"],
             default="functional"
         )
         
@@ -59,10 +67,18 @@ class CLIParser:
         """解析命令行参数"""
         args = self.parser.parse_args()
         
-        # 验证文档路径
-        if not os.path.exists(args.doc_path):
-            logger.error(f"文档路径不存在: {args.doc_path}")
-            raise ValueError(f"文档路径不存在: {args.doc_path}")
+        # 如果是UI自动化测试，使用input_path作为测试用例文件路径
+        if args.test_type == "ui_auto":
+            if not args.input_path:
+                args.input_path = args.doc_path
+            if not os.path.exists(args.input_path):
+                logger.error(f"测试用例文件不存在: {args.input_path}")
+                raise ValueError(f"测试用例文件不存在: {args.input_path}")
+        else:
+            # 验证文档路径
+            if not os.path.exists(args.doc_path):
+                logger.error(f"文档路径不存在: {args.doc_path}")
+                raise ValueError(f"文档路径不存在: {args.doc_path}")
         
         # 根据测试类型选择模板
         template_dir = Path(__file__).parent.parent / "templates"
@@ -70,9 +86,12 @@ class CLIParser:
         if args.test_type == "functional":
             args.template_path = str(template_dir / "functional_test_template.json")
             logger.info(f"使用功能测试模板: {args.template_path}")
-        else:  # api
+        elif args.test_type == "api":
             args.template_path = str(template_dir / "api_test_template.json")
             logger.info(f"使用接口测试模板: {args.template_path}")
+        else:  # ui_auto
+            args.template_path = str(template_dir / "ui_auto_test_template.json")
+            logger.info(f"使用UI自动化测试模板: {args.template_path}")
         
         return args
 

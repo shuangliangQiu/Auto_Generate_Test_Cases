@@ -18,6 +18,7 @@ from agents.quality_assurance import QualityAssuranceAgent
 from services.document_processor import DocumentProcessor
 from services.test_case_generator import TestCaseGenerator
 from services.export_service import ExportService
+from services.ui_auto_service import UIAutoService
 from utils.logger import setup_logger
 # from utils.config import load_config
 
@@ -32,6 +33,7 @@ class AITestingSystem:
         self.doc_processor = DocumentProcessor()
         self.test_generator = TestCaseGenerator()
         self.export_service = ExportService()
+        self.ui_auto_service = UIAutoService()
         
         # Initialize agents
         self.requirement_analyst = RequirementAnalystAgent()
@@ -46,9 +48,20 @@ class AITestingSystem:
     async def process_requirements(self,
                                  doc_path: str,
                                  template_path: str,
-                                 output_path: Optional[str] = None) -> Dict:
+                                 output_path: Optional[str] = None,
+                                 test_type: str = "functional",
+                                 input_path: Optional[str] = None) -> Dict:
         """Process requirements and generate test cases."""
         try:
+            # 如果是UI自动化测试，直接执行UI测试
+            if test_type == "ui_auto":
+                logger.info("开始执行UI自动化测试")
+                # 使用input_path作为测试用例文件路径，如果未提供则使用doc_path
+                test_case_path = input_path if input_path else doc_path
+                result = await self.ui_auto_service.run_ui_tests(test_case_path, output_path)
+                return result
+
+            # 其他测试类型的处理逻辑保持不变
             # Process document
             doc_content = await self.doc_processor.process_document(doc_path)
             
@@ -193,21 +206,29 @@ async def main():
         result = await system.process_requirements(
             doc_path=args.doc_path,
             template_path=args.template_path,
-            output_path=args.output_path
+            output_path=args.output_path,
+            test_type=args.test_type,
+            input_path=args.input_path
         )
         
         if result.get('status') == 'success':
-            print("测试用例生成成功！")
-            print(f"共生成 {len(result.get('test_cases', []))} 个测试用例")
+            print("测试执行成功！")
+            if args.test_type == "ui_auto":
+                print(f"总测试用例数: {result.get('total_cases', 0)}")
+                print(f"通过用例数: {result.get('passed_cases', 0)}")
+                print(f"测试结果已导出到: {args.output_path}")
+            else:
+                print(f"共生成 {len(result.get('test_cases', []))} 个测试用例")
             print(f"测试类型: {args.test_type}")
-            print(f"输出文件: {args.output_path}")
             if 'workflow_result' in result:
                 print(f"工作流程状态: {result['workflow_result'].get('status', 'unknown')}")
         else:
-            print(f"测试用例生成失败: {result.get('message', '未知错误')}")
+            print(f"测试执行失败: {result.get('message', '未知错误')}")
     except Exception as e:
         print(f"程序执行错误: {str(e)}")
-        print("使用方法示例: python src/main.py -d docs/需求文档.pdf -t api -o test_cases.xlsx")
+        print("使用方法示例:")
+        print("1. 生成测试用例: python src/main.py -d docs/需求文档.pdf -t functional -o test_cases.xlsx")
+        print("2. 执行UI测试: python src/main.py -i test_cases.json -t ui_auto -o test_results.xlsx")
 
 if __name__ == "__main__":
     asyncio.run(main())
