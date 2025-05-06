@@ -10,12 +10,12 @@
 - 📊 支持Excel格式导出
 - 🔄 支持多种文档格式（PDF、Word、Markdown、Text）
 - ⚙️ 可扩展的架构设计
+- 🌐 支持UI自动化测试执行
 
 ## 版本说明
 - 📋 当前版本支持通过多线程并发进行测试用例生成、测试用例审查、测试用例改进
 - 📝 当前版本尚不支持接口测试用例生成，仅仅是加了入口，请使用功能测试
-- 🤖 功能测试开发到一定阶段后，会着手开发生成接口测试用例，并支持自动执行接口测试
-- 🔄 UI自动化测试在规划中，莫催，一切都会有的，争取在 2025 年上半年推出。
+- 🌐 已支持UI自动化测试执行，可通过JSON格式的测试用例文件执行自动化测试
 
 ## 安装说明
 
@@ -45,20 +45,26 @@ cp .env.example .env
 
 ## 使用方法
 
-本工具支持通过命令行参数来控制测试用例的生成：
+本工具支持通过命令行参数来控制测试用例的生成和执行：
 
 ```bash
+# 生成测试用例
 python src/main.py -d <需求文档路径> [-o <输出文件路径>] [-t <测试类型>] [-c <并发数：建议 10 以内>]
+
+# 执行UI自动化测试
+python src/main.py -i <测试用例文件路径> -t ui_auto -o <测试结果输出路径>
 ```
 
 ### 命令行参数说明
 
 - `-d, --doc`：必需参数，指定需求文档的路径，支持PDF、Word、Markdown或Text格式
+- `-i, --input`：UI自动化测试时指定测试用例文件路径（JSON格式）
 - `-o, --output`：可选参数，指定测试用例输出文件路径，默认为"test_cases.xlsx"
 - `-c, --concurrency`：可选参数，指定并发数，默认为1
 - `-t, --type`：可选参数，指定测试类型，可选值：
   - `functional`：功能测试（默认值）
   - `api`：接口测试
+  - `ui_auto`：UI自动化测试
 
 ### 使用示例
 
@@ -73,6 +79,50 @@ python src/main.py -d docs/需求文档.pdf -t functional -o 功能测试用例.
 ```bash
 python src/main.py -d docs/接口文档.md -t api -o 接口测试用例.xlsx -c 5
 ```
+
+3. 执行UI自动化测试：
+```bash
+python src/main.py -i test_cases.json -t ui_auto -o test_results.xlsx
+```
+
+### UI自动化测试用例格式
+
+UI自动化测试用例使用JSON格式，示例：
+
+```json
+{
+  "test_cases": [
+    {
+      "id": "tc001",
+      "title": "测试用例标题",
+      "preconditions": [
+        "前置条件1",
+        "前置条件2"
+      ],
+      "steps": [
+        "步骤1",
+        "步骤2"
+      ],
+      "expected_results": [
+        "预期结果1",
+        "预期结果2"
+      ],
+      "priority": "P0",
+      "category": "功能测试",
+      "description": "测试用例描述"
+    }
+  ]
+}
+```
+
+### UI自动化测试结果
+
+UI自动化测试结果将导出为Excel文件，包含以下字段：
+- test_case_id：测试用例ID
+- title：测试用例标题
+- steps：测试步骤
+- expected_results：预期结果
+- actual_result：实际执行结果（passed/failed/warning）
 
 ## 项目结构
 
@@ -98,11 +148,13 @@ python src/main.py -d docs/接口文档.md -t api -o 接口测试用例.xlsx -c 
 │   │   ├── test_designer.py       # 测试设计智能体
 │   │   ├── test_case_writer.py    # 测试用例编写智能体
 │   │   ├── quality_assurance.py   # 质量保证智能体
+│   │   ├── browser_use_agent.py   # UI自动化测试智能体
 │   │   └── assistant.py           # 助手智能体
 │   ├── services/               # 核心服务
 │   │   ├── document_processor.py   # 文档处理服务
 │   │   ├── test_case_generator.py # 测试用例生成服务
-│   │   └── export_service.py      # 导出服务
+│   │   ├── export_service.py      # 导出服务
+│   │   └── ui_auto_service.py     # UI自动化测试服务
 │   ├── models/                 # 数据模型
 │   │   ├── test_case.py          # 测试用例模型
 │   │   └── template.py           # 模板模型
@@ -110,7 +162,8 @@ python src/main.py -d docs/接口文档.md -t api -o 接口测试用例.xlsx -c 
 │   │   └── communication.py      # 通信数据结构
 │   ├── templates/              # 测试用例模板
 │   │   ├── api_test_template.json     # API测试模板
-│   │   └── functional_test_template.json  # 功能测试模板
+│   │   ├── functional_test_template.json  # 功能测试模板
+│   │   └── ui_auto_test_template.json    # UI自动化测试模板
 │   ├── utils/                  # 工具类
 │   │   ├── logger.py             # 日志工具
 │   │   ├── cli_parser.py         # 命令行参数解析工具
@@ -141,3 +194,10 @@ python src/main.py -d docs/接口文档.md -t api -o 接口测试用例.xlsx -c 
   - 预期结果
   - 优先级
   - 备注
+
+## 注意事项
+
+1. UI自动化测试需要安装浏览器驱动
+2. 测试用例文件必须符合指定的JSON格式
+3. 建议使用虚拟环境运行项目
+4. 确保已正确配置环境变量
