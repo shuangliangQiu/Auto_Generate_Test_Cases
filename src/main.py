@@ -9,6 +9,7 @@ from typing import Dict, Optional
 from models.template import Template
 import json
 from src.utils.agent_io import AgentIO
+from src.utils.env_loader import load_env_variables
 
 from agents.assistant import AssistantAgent
 from agents.requirement_analyst import RequirementAnalystAgent
@@ -22,13 +23,14 @@ from services.ui_auto_service import UIAutoService
 from utils.logger import setup_logger
 # from utils.config import load_config
 
+# 把项目根目录添加到python路径（不添加，Windows环境可能会报错）
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 logger = logging.getLogger(__name__)
 
 class AITestingSystem:
-    def __init__(self, concurrent_workers: int = 1):
-        # self.config = load_config()
+    def __init__(self, concurrent_workers: int = 1): 
         setup_logger()
-        
         # Initialize services
         self.doc_processor = DocumentProcessor()
         self.test_generator = TestCaseGenerator()

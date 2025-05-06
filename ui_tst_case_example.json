@@ -1,0 +1,22 @@
+{
+    "test_cases": [
+      {
+        "id": "TC-search-001",
+        "title": "访问url并获取网站名称",
+        "preconditions": [
+          "网络正常"
+        ],
+        "steps": [
+          "浏览器访问https://www.google.com",
+          "获取网站名称"
+        ],
+        "expected_results": [
+          "成功访问网站",
+          "网站名称google或谷歌"
+        ],
+        "priority": "P0",
+        "category": "功能测试",
+        "description": ""
+      }
+    ]
+  }

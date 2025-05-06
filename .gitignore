@@ -10,3 +10,5 @@ test_case.xlsx
 .cache*
 src/.DS_Store*
 .venv*
+# 激活环境Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
+#.venv\Scripts\Activate.ps1 

@@ -123,6 +123,8 @@ UI自动化测试结果将导出为Excel文件，包含以下字段：
 - steps：测试步骤
 - expected_results：预期结果
 - actual_result：实际执行结果（passed/failed/warning）
+test_case_id	title	steps	expected_results	actual_result	status	execution_time
+TC-search-001	访问url并获取网站名称	['浏览器访问https://www.xxx.com', '获取网站名称']	['成功访问网站', '网站名称xxx']	Successfully accessed the website https://www.xxx.com and confirmed the website name is 'xxx' as expected.	passed	2025-05-06 15:15:22
 
 ## 项目结构
 

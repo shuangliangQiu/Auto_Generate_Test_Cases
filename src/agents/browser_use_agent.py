@@ -5,8 +5,8 @@ import asyncio
 import sys
 import os
 import logging
-import codecs
 import json
+from dotenv import load_dotenv
 
 # 设置控制台编码为 UTF-8
 if sys.platform == 'win32':
@@ -43,18 +43,22 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 from src.utils.env_loader import load_env_variables
 
 # 加载环境变量
-env_vars = load_env_variables()
-base_url = env_vars['DS_BASE_URL']
-api_key = env_vars['DS_API_KEY']
-model_v3 = env_vars['DS_MODEL_V3']
+load_dotenv()
+# env_vars = load_env_variables()
+base_url = os.getenv('DS_BASE_URL')
+api_key = os.getenv('DS_API_KEY')
+model_v3 = os.getenv('DS_MODEL_V3')
 
 # 设置环境变量
 os.environ['OPENAI_API_KEY'] = api_key
+os.environ['OPENAI_BASE_URL'] = base_url
+# os.environ['OPENAI_API_KEY'] = env_vars['DS_API_KEY']
+# os.environ['OPENAI_BASE_URL'] = env_vars['DS_BASE_URL']
 
 llm = ChatOpenAI(
     base_url=base_url,
     model=model_v3,
-    api_key=api_key,
+    api_key=SecretStr(api_key),
     temperature=0.6,
     streaming=True,
     max_tokens=4096,
@@ -64,6 +68,10 @@ llm = ChatOpenAI(
 async def browser_use_agent(task):
     agent = Agent(
         task=task,
+        # planner_llm='', # 规划模型，默认不启用，也可以使用较小的模型仅仅进行规划工作
+        # use_vision=True, # 是否启用模型视觉理解
+        # max_steps = 100, # 最大步数，默认100
+        generate_gif = False, # 是否录制浏览器过程生成 GIF。为 True 时自动生成随机文件名；为字符串时将 GIF 存储到该路径。
         llm=llm
     )
     result = await agent.run()
@@ -99,7 +107,7 @@ def build_task_prompt(test_case):
 
 if __name__ == "__main__":
     # 测试用例文件路径
-    test_case_file_path = 'agent_results/test_case_writer_result.json'
+    test_case_file_path = r'C:\\Users\\liut2\\Desktop\\Auto_Generate_Test_Cases\\ui_tst_case.json'
     
     # 读取测试用例
     test_cases = read_test_cases(test_case_file_path)

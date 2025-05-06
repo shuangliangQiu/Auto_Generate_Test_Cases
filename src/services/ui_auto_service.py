@@ -1,15 +1,19 @@
 import asyncio
 import json
 import logging
+import os
 from datetime import datetime
 import pandas as pd
 from pathlib import Path
 from src.agents.browser_use_agent import browser_use_agent, read_test_cases
+from src.utils.env_loader import load_env_variables
+from langchain_openai import ChatOpenAI
+from pydantic import SecretStr
 
 logger = logging.getLogger(__name__)
 
 class UIAutoService:
-    def __init__(self):
+    def __init__(self, concurrent_workers: int = 1):
         self.test_cases = []
         self.test_results = []
 
@@ -60,7 +64,7 @@ class UIAutoService:
             # 构建任务提示
             task_prompt = self._build_task_prompt(test_case)
             
-            执行测试
+            #执行测试
             actual_results = await browser_use_agent(task_prompt)
             
             # 获取测试结果
@@ -134,4 +138,4 @@ class UIAutoService:
             
         except Exception as e:
             logger.error(f"导出Excel失败: {str(e)}")
-            raise 
+            raise

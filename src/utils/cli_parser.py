@@ -23,8 +23,7 @@ class CLIParser:
             "-d", "--doc", 
             dest="doc_path",
             help="需求文档路径或测试用例文件路径",
-            type=str,
-            required=True
+            type=str
         )
         
         # 添加输入文件参数（用于UI自动化测试）
@@ -67,6 +66,11 @@ class CLIParser:
         """解析命令行参数"""
         args = self.parser.parse_args()
         
+        # 验证至少提供了一个输入参数
+        if not args.doc_path and not args.input_path:
+            logger.error("必须提供至少一个输入参数(-d/--doc 或 -i/--input)")
+            raise ValueError("必须提供至少一个输入参数(-d/--doc 或 -i/--input)")
+            
         # 如果是UI自动化测试，使用input_path作为测试用例文件路径
         if args.test_type == "ui_auto":
             if not args.input_path:
@@ -76,7 +80,7 @@ class CLIParser:
                 raise ValueError(f"测试用例文件不存在: {args.input_path}")
         else:
             # 验证文档路径
-            if not os.path.exists(args.doc_path):
+            if args.doc_path and not os.path.exists(args.doc_path):
                 logger.error(f"文档路径不存在: {args.doc_path}")
                 raise ValueError(f"文档路径不存在: {args.doc_path}")
         
