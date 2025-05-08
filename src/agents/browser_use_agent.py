@@ -70,7 +70,7 @@ async def browser_use_agent(task):
         # planner_llm='', # 规划模型，默认不启用，也可以使用较小的模型仅仅进行规划工作
         # use_vision=True, # 是否启用模型视觉理解
         # max_steps = 100, # 最大步数，默认100
-        generate_gif = False, # 是否录制浏览器过程生成 GIF。为 True 时自动生成随机文件名；为字符串时将 GIF 存储到该路径。
+        generate_gif = False, # 是否录制浏览器过程生成 GIF。为 True 时自动生成随机文件名；为字符串时将 GIF 存储到该路径
         llm=llm
     )
     result = await agent.run()

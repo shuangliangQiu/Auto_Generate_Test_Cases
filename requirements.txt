@@ -22,6 +22,7 @@ aiofiles>=23.2.1
 typing>=3.7.4.3
 tenacity>=8.2.3
 numpy>=1.24.3
+matplotlib
 
 # Testing
 pytest>=7.4.2
