@@ -344,7 +344,7 @@ def main(input_path: str):
         
         # 在线模式
         if not offline_mode:
-            api_url = "http://k8s-platform-cloudswa-fe77b476e2-b6ef1b9e2e540b4a.elb.ap-southeast-1.amazonaws.com/api/v1/intelligent/search"
+            api_url = "http://k8s-platform-cloudswa-fe77b476e2-b6ef1b9e2e540b4a/api/v1/intelligent/search"
             headers = {"Content-Type": "application/json", "X-TOKEN": "1"}
             
             # 获取没有检索结果的查询
